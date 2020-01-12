@@ -1,6 +1,6 @@
 use std::collections::{HashSet, VecDeque};
 use std::mem;
-use std::ops::{Index, IndexMut};
+use std::ops::{Index, IndexMut, Not};
 
 struct LiteralInfo<T> {
     positive: T,
@@ -30,6 +30,10 @@ impl<T> IndexMut<Literal> for LiteralMap<T> {
 }
 
 impl<T> LiteralMap<T> {
+    fn new() -> LiteralMap<T> {
+        LiteralMap(Vec::new())
+    }
+
     fn push(&mut self, positive: T, negative: T) {
         self.0.push(LiteralInfo { positive, negative })
     }
@@ -62,6 +66,26 @@ impl Literal {
     }
 }
 
+impl From<Var> for Literal {
+    fn from(var: Var) -> Literal {
+        Literal {
+            sign: Sign::Positive,
+            var,
+        }
+    }
+}
+
+impl Not for Literal {
+    type Output = Literal;
+
+    fn not(self) -> Self::Output {
+        Literal {
+            sign: self.sign.flip(),
+            var: self.var,
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Sign {
     Positive,
@@ -90,7 +114,7 @@ pub struct Clause {
 }
 
 impl Clause {
-    fn new(literals: Vec<Literal>) -> Self {
+    pub fn new(literals: Vec<Literal>) -> Option<Self> {
         // TODO: Normalize clause, check for (p v ~p)
         // occurrences, and potentially use the current solver state in
         // incremental implementation
@@ -102,7 +126,11 @@ impl Clause {
             .copied()
             .collect::<Vec<_>>();
 
-        Clause { literals }
+        if literals.len() >= 2 {
+            Some(Clause { literals })
+        } else {
+            None
+        }
     }
 }
 
@@ -130,8 +158,6 @@ pub struct Solver {
     assignment: Assignment,
     trail: Vec<Literal>,
     trail_lim: Vec<usize>,
-    // Next variable that we will make a decision on
-    decision_var: usize,
 }
 
 pub struct Assignment {
@@ -139,6 +165,10 @@ pub struct Assignment {
 }
 
 impl Assignment {
+    fn new() -> Assignment {
+        Assignment { values: Vec::new() }
+    }
+
     fn new_var(&mut self) {
         self.values.push(VarValue::Unassigned);
     }
@@ -165,6 +195,7 @@ impl Assignment {
     }
 }
 
+#[derive(Debug)]
 pub struct Model(VarMap<bool>);
 
 impl Model {
@@ -179,6 +210,17 @@ impl Model {
 }
 
 impl Solver {
+    pub fn new() -> Solver {
+        Solver {
+            clauses: Vec::new(),
+            watches: LiteralMap::new(),
+            propagation_queue: VecDeque::new(),
+            assignment: Assignment::new(),
+            trail: Vec::new(),
+            trail_lim: Vec::new(),
+        }
+    }
+
     fn assume(&mut self, lit: Literal) -> bool {
         self.trail_lim.push(self.trail.len());
         self.assert_literal(lit)
