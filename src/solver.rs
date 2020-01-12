@@ -212,10 +212,13 @@ impl ClauseDatabase {
 pub struct Solver {
     clause_database: ClauseDatabase,
     watches: LiteralMap<Vec<ClauseIndex>>,
-    propagation_queue: VecDeque<Literal>,
+    // TODO: Potentially replace propagation queue by just the trail, as in the
+    // actual MiniSAT implementation
     assignment: Assignment,
     trail: Vec<Literal>,
     trail_lim: Vec<usize>,
+    // Position of propagation queue in trail. Based on MiniSAT implementation.
+    queue_head: usize,
 }
 
 pub struct Assignment {
@@ -280,10 +283,10 @@ impl Solver {
         Solver {
             clause_database: ClauseDatabase::new(),
             watches: LiteralMap::new(),
-            propagation_queue: VecDeque::new(),
             assignment: Assignment::new(),
             trail: Vec::new(),
             trail_lim: Vec::new(),
+            queue_head: 0,
         }
     }
 
@@ -307,7 +310,7 @@ impl Solver {
     }
 
     fn decision_level(&self) -> usize {
-        unimplemented!();
+        self.trail_lim.len()
     }
 
     // Asserts a literal
@@ -325,7 +328,6 @@ impl Solver {
                         },
                     );
                     self.trail.push(lit);
-                    self.propagation_queue.push_back(lit);
                     true
                 }
             },
@@ -373,7 +375,10 @@ impl Solver {
     }
 
     fn propagate(&mut self) -> bool {
-        while let Some(lit) = self.propagation_queue.pop_front() {
+        // TODO: Avoid bounds check on self.trail
+        while self.queue_head < self.trail.len() {
+            let lit = self.trail[self.queue_head];
+
             // We empty out the watch list as we process it. Clauses are
             // responsible for re-adding themselves to the watch list if
             // necessary.
@@ -383,10 +388,14 @@ impl Solver {
                 if !self.handle_clause(c_idx, lit) {
                     // TODO: Maybe put remaining clauses back into the watch
                     // list, as in MiniSAT? Why do they do that?
-                    self.propagation_queue.clear();
+
+                    // Clear the queue
+                    self.queue_head = self.trail.len();
                     return false;
                 }
             }
+
+            self.queue_head += 1;
         }
 
         true
