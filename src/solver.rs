@@ -41,7 +41,13 @@ impl<T> LiteralMap<T> {
 
 type VarMap<T> = Vec<T>;
 
-type ClauseIndex = usize;
+#[derive(Debug, Copy, Clone)]
+pub enum ClauseType {
+    User,
+    Learned,
+}
+
+type ClauseIndex = (ClauseType, usize);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Var(usize);
@@ -132,6 +138,10 @@ impl Clause {
             None
         }
     }
+
+    fn new_unchecked(literals: Vec<Literal>) -> Self {
+        Clause { literals }
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -151,8 +161,51 @@ impl VarValue {
     }
 }
 
-pub struct Solver {
+struct ClauseDatabase {
     clauses: Vec<Clause>,
+    learned: Vec<Clause>,
+}
+
+impl ClauseDatabase {
+    fn new() -> ClauseDatabase {
+        ClauseDatabase {
+            clauses: Vec::new(),
+            learned: Vec::new(),
+        }
+    }
+
+    fn get_clause(&self, idx: ClauseIndex) -> &Clause {
+        match idx {
+            (ClauseType::User, idx) => &self.clauses[idx],
+            (ClauseType::Learned, idx) => &self.learned[idx],
+        }
+    }
+
+    fn get_clause_mut(&mut self, idx: ClauseIndex) -> &mut Clause {
+        match idx {
+            (ClauseType::User, idx) => &mut self.clauses[idx],
+            (ClauseType::Learned, idx) => &mut self.learned[idx],
+        }
+    }
+
+    fn add_clause(&mut self, clause: Clause, clause_type: ClauseType) -> ClauseIndex {
+        match clause_type {
+            ClauseType::User => {
+                let idx = self.clauses.len();
+                self.clauses.push(clause);
+                (ClauseType::User, idx)
+            }
+            ClauseType::Learned => {
+                let idx = self.learned.len();
+                self.learned.push(clause);
+                (ClauseType::Learned, idx)
+            }
+        }
+    }
+}
+
+pub struct Solver {
+    clause_database: ClauseDatabase,
     watches: LiteralMap<Vec<ClauseIndex>>,
     propagation_queue: VecDeque<Literal>,
     assignment: Assignment,
@@ -212,7 +265,7 @@ impl Model {
 impl Solver {
     pub fn new() -> Solver {
         Solver {
-            clauses: Vec::new(),
+            clause_database: ClauseDatabase::new(),
             watches: LiteralMap::new(),
             propagation_queue: VecDeque::new(),
             assignment: Assignment::new(),
@@ -263,7 +316,7 @@ impl Solver {
         // This function should always resubscribe to some watched literal, to
         // ensure that the number of watched literals is always equal to 2
         let unit_literal = {
-            let clause = &mut self.clauses[clause_index];
+            let clause = self.clause_database.get_clause_mut(clause_index);
 
             // Ensure that the falsified watched literal is in index 1
             if clause.literals[0] == lit.negate() {
@@ -324,20 +377,18 @@ impl Solver {
         Var(idx)
     }
 
-    pub fn add_clause(&mut self, clause: Clause) {
+    pub fn add_clause(&mut self, clause: Clause, clause_type: ClauseType) {
         // TODO: Set up initial watches, in incremental version this would need
         // to look at the current assignment
-        let clause_index = self.clauses.len();
+        let first_watch = clause.literals[0];
+        let second_watch = clause.literals[1];
 
-        let first_watch = &clause.literals[0];
-        let second_watch = &clause.literals[1];
+        let idx = self.clause_database.add_clause(clause, clause_type);
 
         // We watch the negations, because we want to know when literals in our
         // clause become falsified. We don't care when they become true.
-        self.watches[first_watch.negate()].push(clause_index);
-        self.watches[second_watch.negate()].push(clause_index);
-
-        self.clauses.push(clause);
+        self.watches[first_watch.negate()].push(idx);
+        self.watches[second_watch.negate()].push(idx);
     }
 
     pub fn solve(mut self) -> Option<Model> {
