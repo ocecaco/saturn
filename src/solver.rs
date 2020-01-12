@@ -67,7 +67,7 @@ impl Literal {
         }
     }
 
-    fn assignment(&self) -> (Var, VarValue) {
+    fn assignment(&self) -> (Var, bool) {
         (self.var, self.sign.value())
     }
 }
@@ -106,10 +106,10 @@ impl Sign {
         }
     }
 
-    fn value(&self) -> VarValue {
+    fn value(&self) -> bool {
         match self {
-            Sign::Positive => VarValue::True,
-            Sign::Negative => VarValue::False,
+            Sign::Positive => true,
+            Sign::Negative => false,
         }
     }
 }
@@ -151,6 +151,15 @@ pub enum VarValue {
     Unassigned,
 }
 
+pub enum VarInfo {
+    Assigned {
+        value: bool,
+        reason: Option<ClauseIndex>,
+        level: usize,
+    },
+    Unassigned,
+}
+
 impl VarValue {
     fn negate(&self) -> VarValue {
         match self {
@@ -189,18 +198,14 @@ impl ClauseDatabase {
     }
 
     fn add_clause(&mut self, clause: Clause, clause_type: ClauseType) -> ClauseIndex {
-        match clause_type {
-            ClauseType::User => {
-                let idx = self.clauses.len();
-                self.clauses.push(clause);
-                (ClauseType::User, idx)
-            }
-            ClauseType::Learned => {
-                let idx = self.learned.len();
-                self.learned.push(clause);
-                (ClauseType::Learned, idx)
-            }
-        }
+        let db = match clause_type {
+            ClauseType::User => &mut self.clauses,
+            ClauseType::Learned => &mut self.learned,
+        };
+
+        let idx = db.len();
+        db.push(clause);
+        (clause_type, idx)
     }
 }
 
@@ -214,7 +219,7 @@ pub struct Solver {
 }
 
 pub struct Assignment {
-    values: VarMap<VarValue>,
+    values: VarMap<VarInfo>,
 }
 
 impl Assignment {
@@ -223,7 +228,7 @@ impl Assignment {
     }
 
     fn new_var(&mut self) {
-        self.values.push(VarValue::Unassigned);
+        self.values.push(VarInfo::Unassigned);
     }
 
     fn num_vars(&self) -> usize {
@@ -231,7 +236,11 @@ impl Assignment {
     }
 
     fn var_value(&self, var: Var) -> VarValue {
-        self.values[var.0]
+        match self.values[var.0] {
+            VarInfo::Assigned { value: true, .. } => VarValue::True,
+            VarInfo::Assigned { value: false, .. } => VarValue::False,
+            VarInfo::Unassigned => VarValue::Unassigned,
+        }
     }
 
     fn literal_value(&self, lit: Literal) -> VarValue {
@@ -243,8 +252,8 @@ impl Assignment {
         }
     }
 
-    fn assign(&mut self, var: Var, value: VarValue) {
-        self.values[var.0] = value;
+    fn assign(&mut self, var: Var, info: VarInfo) {
+        self.values[var.0] = info;
     }
 }
 
@@ -256,7 +265,11 @@ impl Model {
         let values = assignment
             .values
             .iter()
-            .map(|&v| v == VarValue::True)
+            .map(|v| match v {
+                VarInfo::Assigned { value: true, .. } => true,
+                VarInfo::Assigned { value: false, .. } => false,
+                VarInfo::Unassigned => false,
+            })
             .collect();
         Model(values)
     }
@@ -276,13 +289,13 @@ impl Solver {
 
     fn assume(&mut self, lit: Literal) -> bool {
         self.trail_lim.push(self.trail.len());
-        self.assert_literal(lit)
+        self.assert_literal(lit, None)
     }
 
     fn undo_one(&mut self) {
         let last = self.trail.pop().unwrap();
 
-        self.assignment.assign(last.var, VarValue::Unassigned);
+        self.assignment.assign(last.var, VarInfo::Unassigned);
     }
 
     fn cancel(&mut self) {
@@ -293,13 +306,24 @@ impl Solver {
         }
     }
 
+    fn decision_level(&self) -> usize {
+        unimplemented!();
+    }
+
     // Asserts a literal
     // TODO: Maybe do not use boolean for error reporting
-    fn assert_literal(&mut self, lit: Literal) -> bool {
+    fn assert_literal(&mut self, lit: Literal, reason: Option<ClauseIndex>) -> bool {
         match self.assignment.literal_value(lit) {
             VarValue::Unassigned => match lit.assignment() {
                 (var, value) => {
-                    self.assignment.assign(var, value);
+                    self.assignment.assign(
+                        var,
+                        VarInfo::Assigned {
+                            value,
+                            reason,
+                            level: self.decision_level(),
+                        },
+                    );
                     self.trail.push(lit);
                     self.propagation_queue.push_back(lit);
                     true
@@ -345,7 +369,7 @@ impl Solver {
         // If we didn't find a new literal, then this is a unit clause. Perform
         // unit propagation.
         self.watches[lit].push(clause_index);
-        return self.assert_literal(unit_literal);
+        return self.assert_literal(unit_literal, Some(clause_index));
     }
 
     fn propagate(&mut self) -> bool {
