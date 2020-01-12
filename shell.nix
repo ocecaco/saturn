@@ -6,6 +6,6 @@ with nixpkgs;
   stdenv.mkDerivation {
   name = "saturn";
   buildInputs = [
-    nixpkgs.latest.rustChannels.nightly.rust
+    nixpkgs.latest.rustChannels.stable.rust
   ];
 }
