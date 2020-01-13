@@ -53,7 +53,7 @@ pub enum ClauseType {
 
 type ClauseIndex = (ClauseType, usize);
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Var(usize);
 
 impl fmt::Display for Var {
@@ -63,7 +63,7 @@ impl fmt::Display for Var {
 }
 
 // TODO: Possibly indicate sign by making literal negative/positive
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Literal {
     sign: Sign,
     var: Var,
@@ -100,7 +100,7 @@ impl From<Var> for Literal {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Sign {
     Positive,
     Negative,
@@ -132,13 +132,15 @@ impl Clause {
         // TODO: Normalize clause, check for (p v ~p)
         // occurrences, and potentially use the current solver state in
         // incremental implementation
-        let literals = literals
+        let mut literals = literals
             .iter()
             .copied()
             .collect::<HashSet<_>>()
             .iter()
             .copied()
             .collect::<Vec<_>>();
+
+        literals.sort();
 
         if literals.len() >= 2 {
             Some(Clause { literals })
@@ -495,11 +497,36 @@ impl Solver {
         }
     }
 
+    fn is_clause_implied(&self, clause_index: ClauseIndex) -> bool {
+        let mut count_false = 0;
+        let mut count_unassigned = 0;
+
+        let clause = self.clause_database.get_clause(clause_index);
+        for &lit in &clause.literals {
+            let val = self.assignment.literal_value(lit);
+            match val {
+                VarValue::False => count_false += 1,
+                VarValue::Unassigned => count_unassigned += 1,
+                _ => {}
+            };
+        }
+
+        (count_false == clause.literals.len() - 1) && (count_unassigned == 1)
+    }
+
     fn handle_clause(&mut self, clause_index: ClauseIndex, lit: Literal) -> bool {
         // This function should always resubscribe to some watched literal, to
         // ensure that the number of watched literals is always equal to 2
         let unit_literal = {
+            let is_implied = self.is_clause_implied(clause_index);
             let clause = self.clause_database.get_clause_mut(clause_index);
+
+            // debug!(
+            //     "Watched literal {} for clause {} (implied: {})",
+            //     lit,
+            //     clause,
+            //     if is_implied { "yes" } else { "no" }
+            // );
 
             // Ensure that the falsified watched literal is in index 1
             if clause.literals[0] == lit.negate() {
@@ -516,7 +543,9 @@ impl Solver {
             for (i, &alternative) in clause.literals[2..].iter().enumerate() {
                 if self.assignment.literal_value(alternative) != VarValue::False {
                     // Found one!
-                    clause.literals.swap(1, i);
+
+                    // +2 because we have a slice that starts at index 2
+                    clause.literals.swap(1, i + 2);
                     self.watches[clause.literals[1].negate()].push(clause_index);
                     return true;
                 }
@@ -601,6 +630,12 @@ impl Solver {
                 // If all variables are assigned, then we have a satisfying
                 // assignment.
                 if self.num_assigns() == self.assignment.num_vars() {
+                    for v in &self.assignment.values {
+                        if let VarInfo::Unassigned = v {
+                            panic!("Found unassigned!");
+                        }
+                    }
+
                     let model = Some(Model::from_assignment(&self.assignment));
                     self.cancel_until(0);
                     return model;
