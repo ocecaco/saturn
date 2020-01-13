@@ -20,7 +20,7 @@ fn load_dimacs(solver: &mut Solver, filename: &str) -> Result<()> {
 
         let field = line.split_whitespace().collect::<Vec<_>>();
 
-        if field[..2] == ["p", "cnf"] {
+        if field.len() >= 2 && field[..2] == ["p", "cnf"] {
             num_vars = Some(field[2].parse().unwrap());
             num_clauses = Some(field[3].parse().unwrap());
             break;
@@ -65,7 +65,7 @@ fn load_dimacs(solver: &mut Solver, filename: &str) -> Result<()> {
 fn main() -> Result<()> {
     let mut solver = Solver::new();
 
-    load_dimacs(&mut solver, "test.dimacs")?;
+    load_dimacs(&mut solver, "dubois20.cnf")?;
 
     println!("{:?}", solver.solve().unwrap());
 
