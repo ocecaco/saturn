@@ -1,14 +1,19 @@
+mod assignment;
+mod clausedb;
 mod solver;
+mod types;
+mod util;
 
 type Error = Box<dyn std::error::Error>;
 type Result<T> = std::result::Result<T, Error>;
 
 use log::debug;
-use solver::{Clause, ClauseType, Literal, Solver};
+use solver::Solver;
 use std::convert::TryInto;
 use std::env;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use types::{Clause, Literal};
 
 fn load_dimacs(solver: &mut Solver, filename: &str) -> Result<()> {
     let file = File::open(filename)?;
@@ -58,7 +63,7 @@ fn load_dimacs(solver: &mut Solver, filename: &str) -> Result<()> {
             }
         }
 
-        solver.add_clause(Clause::new(clause), ClauseType::User);
+        solver.add_clause(Clause::new(clause));
     }
 
     debug!("Finished adding clauses");

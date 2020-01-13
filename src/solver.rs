@@ -1,275 +1,11 @@
-use std::cmp;
-use std::collections::HashSet;
-use std::fmt;
-use std::mem;
-use std::ops::{Index, IndexMut};
-
 use log::debug;
+use std::cmp;
+use std::mem;
 
-struct LiteralInfo<T> {
-    positive: T,
-    negative: T,
-}
-
-struct LiteralMap<T>(Vec<LiteralInfo<T>>);
-
-impl<T> Index<Literal> for LiteralMap<T> {
-    type Output = T;
-
-    fn index(&self, lit: Literal) -> &T {
-        match lit.sign {
-            Sign::Positive => &self.0[lit.var.0].positive,
-            Sign::Negative => &self.0[lit.var.0].negative,
-        }
-    }
-}
-
-impl<T> IndexMut<Literal> for LiteralMap<T> {
-    fn index_mut(&mut self, lit: Literal) -> &mut T {
-        match lit.sign {
-            Sign::Positive => &mut self.0[lit.var.0].positive,
-            Sign::Negative => &mut self.0[lit.var.0].negative,
-        }
-    }
-}
-
-impl<T> LiteralMap<T> {
-    fn new() -> LiteralMap<T> {
-        LiteralMap(Vec::new())
-    }
-
-    fn push(&mut self, positive: T, negative: T) {
-        self.0.push(LiteralInfo { positive, negative })
-    }
-}
-
-type VarMap<T> = Vec<T>;
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum ClauseType {
-    User,
-    Learned,
-}
-
-type ClauseIndex = (ClauseType, usize);
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Var(usize);
-
-impl fmt::Display for Var {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-// TODO: Possibly indicate sign by making literal negative/positive
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Literal {
-    sign: Sign,
-    var: Var,
-}
-
-impl fmt::Display for Literal {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.sign {
-            Sign::Positive => write!(f, "{}", self.var),
-            Sign::Negative => write!(f, "-{}", self.var),
-        }
-    }
-}
-
-impl Literal {
-    pub fn negate(&self) -> Literal {
-        Literal {
-            sign: self.sign.flip(),
-            var: self.var,
-        }
-    }
-
-    fn assignment(&self) -> (Var, bool) {
-        (self.var, self.sign.value())
-    }
-}
-
-impl From<Var> for Literal {
-    fn from(var: Var) -> Literal {
-        Literal {
-            sign: Sign::Positive,
-            var,
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum Sign {
-    Positive,
-    Negative,
-}
-
-impl Sign {
-    fn flip(&self) -> Sign {
-        match self {
-            Sign::Positive => Sign::Negative,
-            Sign::Negative => Sign::Positive,
-        }
-    }
-
-    fn value(&self) -> bool {
-        match self {
-            Sign::Positive => true,
-            Sign::Negative => false,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct Clause {
-    literals: Vec<Literal>,
-}
-
-impl Clause {
-    pub fn new(literals: Vec<Literal>) -> Self {
-        // TODO: Normalize clause, check for (p v ~p)
-        // occurrences, and potentially use the current solver state in
-        // incremental implementation
-        let mut literals = literals
-            .iter()
-            .copied()
-            .collect::<HashSet<_>>()
-            .iter()
-            .copied()
-            .collect::<Vec<_>>();
-
-        literals.sort();
-
-        Clause { literals }
-    }
-
-    fn new_unchecked(literals: Vec<Literal>) -> Self {
-        Clause { literals }
-    }
-
-    fn calc_reason<'a>(&'a self, conflicting: bool) -> impl Iterator<Item = Literal> + 'a {
-        // If this is a conflicting clause, then all of the literals are part of
-        // the reason set. Otherwise, the first literal is not, since it is the
-        // implied literal of the unit propagation.
-        let reason = if conflicting {
-            &self.literals[..]
-        } else {
-            &self.literals[1..]
-        };
-        reason.iter().copied()
-    }
-
-    fn watch_triggered(
-        &mut self,
-        lit: Literal,
-        assignment: &Assignment,
-    ) -> (Literal, Option<Literal>) {
-        // Ensure that the falsified watched literal is in index 1
-        if self.literals[0] == lit.negate() {
-            self.literals.swap(0, 1);
-        }
-
-        // The other watched literal is already true: the clause is satisfied.
-        if assignment.literal_value(self.literals[0]) == VarValue::True {
-            return (lit, None);
-        }
-
-        // Find new literal to watch
-        for (i, &alternative) in self.literals.iter().enumerate().skip(2) {
-            if assignment.literal_value(alternative) != VarValue::False {
-                // Found one! No need to do unit propagation
-                self.literals.swap(1, i);
-                return (self.literals[1].negate(), None);
-            }
-        }
-
-        // If we didn't find a new literal, then this is a unit clause. Perform
-        // unit propagation.
-        (lit, Some(self.literals[0]))
-    }
-}
-
-impl fmt::Display for Clause {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "[")?;
-        let mut items = self.literals.iter();
-        if let Some(x) = items.next() {
-            write!(f, "{}", x)?;
-
-            for i in items {
-                write!(f, ", {}", i)?;
-            }
-        }
-        write!(f, "]")
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum VarValue {
-    True,
-    False,
-    Unassigned,
-}
-
-pub enum VarInfo {
-    Assigned {
-        value: bool,
-        reason: Option<ClauseIndex>,
-        level: usize,
-    },
-    Unassigned,
-}
-
-impl VarValue {
-    fn negate(&self) -> VarValue {
-        match self {
-            VarValue::True => VarValue::False,
-            VarValue::False => VarValue::True,
-            VarValue::Unassigned => VarValue::Unassigned,
-        }
-    }
-}
-
-struct ClauseDatabase {
-    clauses: Vec<Clause>,
-    learned: Vec<Clause>,
-}
-
-impl ClauseDatabase {
-    fn new() -> ClauseDatabase {
-        ClauseDatabase {
-            clauses: Vec::new(),
-            learned: Vec::new(),
-        }
-    }
-
-    fn get_clause(&self, idx: ClauseIndex) -> &Clause {
-        match idx {
-            (ClauseType::User, idx) => &self.clauses[idx],
-            (ClauseType::Learned, idx) => &self.learned[idx],
-        }
-    }
-
-    fn get_clause_mut(&mut self, idx: ClauseIndex) -> &mut Clause {
-        match idx {
-            (ClauseType::User, idx) => &mut self.clauses[idx],
-            (ClauseType::Learned, idx) => &mut self.learned[idx],
-        }
-    }
-
-    fn add_clause(&mut self, clause: Clause, clause_type: ClauseType) -> ClauseIndex {
-        let db = match clause_type {
-            ClauseType::User => &mut self.clauses,
-            ClauseType::Learned => &mut self.learned,
-        };
-
-        let idx = db.len();
-        db.push(clause);
-        (clause_type, idx)
-    }
-}
+use crate::assignment::{Assignment, VarInfo, VarValue};
+use crate::clausedb::{ClauseDatabase, ClauseIndex, ClauseType};
+use crate::types::{Clause, Literal, Model, Var};
+use crate::util::LiteralMap;
 
 pub struct Solver {
     clause_database: ClauseDatabase,
@@ -279,77 +15,6 @@ pub struct Solver {
     trail_lim: Vec<usize>,
     // Position of propagation queue in trail. Based on MiniSAT implementation.
     queue_head: usize,
-}
-
-pub struct Assignment {
-    values: VarMap<VarInfo>,
-}
-
-impl Assignment {
-    fn new() -> Assignment {
-        Assignment { values: Vec::new() }
-    }
-
-    fn new_var(&mut self) {
-        self.values.push(VarInfo::Unassigned);
-    }
-
-    fn num_vars(&self) -> usize {
-        self.values.len()
-    }
-
-    fn var_value(&self, var: Var) -> VarValue {
-        match self.values[var.0] {
-            VarInfo::Assigned { value: true, .. } => VarValue::True,
-            VarInfo::Assigned { value: false, .. } => VarValue::False,
-            VarInfo::Unassigned => VarValue::Unassigned,
-        }
-    }
-
-    fn var_level(&self, var: Var) -> Option<usize> {
-        match self.values[var.0] {
-            VarInfo::Assigned { level, .. } => Some(level),
-            VarInfo::Unassigned => None,
-        }
-    }
-
-    fn var_reason(&self, var: Var) -> Option<ClauseIndex> {
-        match self.values[var.0] {
-            VarInfo::Assigned { reason, .. } => reason,
-            VarInfo::Unassigned => None,
-        }
-    }
-
-    fn literal_value(&self, lit: Literal) -> VarValue {
-        let var_value = self.var_value(lit.var);
-
-        match lit.sign {
-            Sign::Positive => var_value,
-            Sign::Negative => var_value.negate(),
-        }
-    }
-
-    fn assign(&mut self, var: Var, info: VarInfo) {
-        self.values[var.0] = info;
-    }
-}
-
-#[derive(Debug)]
-pub struct Model(VarMap<bool>);
-
-impl Model {
-    fn from_assignment(assignment: &Assignment) -> Self {
-        let values = assignment
-            .values
-            .iter()
-            .map(|v| match v {
-                VarInfo::Assigned { value: true, .. } => true,
-                VarInfo::Assigned { value: false, .. } => false,
-                VarInfo::Unassigned => false,
-            })
-            .collect();
-        Model(values)
-    }
 }
 
 impl Solver {
@@ -371,7 +36,7 @@ impl Solver {
     fn record(&mut self, clause: Clause) {
         // Perform unit propagation on the asserting literal
         let asserting_lit = clause.literals[0];
-        let clause_idx = self.add_clause(clause, ClauseType::Learned);
+        let clause_idx = self.add_clause_internal(clause, ClauseType::Learned);
 
         if let Some(clause_idx) = clause_idx {
             debug!("Asserting literal for learned clause: {}", asserting_lit);
@@ -580,7 +245,15 @@ impl Solver {
         Var(idx)
     }
 
-    pub fn add_clause(&mut self, clause: Clause, clause_type: ClauseType) -> Option<ClauseIndex> {
+    pub fn add_clause(&mut self, clause: Clause) {
+        self.add_clause_internal(clause, ClauseType::User);
+    }
+
+    fn add_clause_internal(
+        &mut self,
+        clause: Clause,
+        clause_type: ClauseType,
+    ) -> Option<ClauseIndex> {
         if clause.literals.len() == 0 {
             panic!("attempt to add empty clause");
         } else if clause.literals.len() == 1 {
