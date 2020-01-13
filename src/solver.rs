@@ -45,7 +45,7 @@ impl<T> LiteralMap<T> {
 
 type VarMap<T> = Vec<T>;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ClauseType {
     User,
     Learned,
@@ -571,15 +571,37 @@ impl Solver {
             // necessary.
             let watches = mem::replace(&mut self.watches[lit], Vec::new());
 
-            for &c_idx in &watches {
+            // TODO: Get rid of bounds checking
+            for i in 0..watches.len() {
+                let c_idx = watches[i];
+
                 if !self.handle_clause(c_idx, lit) {
-                    // TODO: Maybe put remaining clauses back into the watch
-                    // list, as in MiniSAT? Why do they do that?
+                    // Copy back the remaining watches, so we ensure that no
+                    // watch pointers are lost, even when backtracking/conflict
+                    // occurs.
+                    self.watches[lit].extend_from_slice(&watches[i + 1..]);
 
                     // Clear the queue
                     self.queue_head = self.trail.len();
                     debug!("Conflict! {}", self.clause_database.get_clause(c_idx));
                     return Some(c_idx);
+                }
+
+                if cfg!(debug_assertions) {
+                    let clause = self.clause_database.get_clause(c_idx);
+                    let watch1 = clause.literals[0];
+                    let watch2 = clause.literals[1];
+                    let check1 = self.watches[watch1.negate()].contains(&c_idx);
+                    let check2 = self.watches[watch2.negate()].contains(&c_idx);
+                    if !check1 || !check2 {
+                        panic!(
+                            "Watch invariant violation on {:?} {} {} {}",
+                            c_idx,
+                            self.clause_database.get_clause(c_idx),
+                            check1,
+                            check2
+                        );
+                    }
                 }
             }
 
@@ -588,15 +610,25 @@ impl Solver {
 
         if cfg!(debug_assertions) {
             // There shouldn't be any implied clauses after propagation
-            for c in &self.clause_database.clauses {
+            for (i, c) in self.clause_database.clauses.iter().enumerate() {
                 if c.is_implied(&self.assignment) {
-                    panic!("Found implied clause: {}", c);
+                    let assn = c
+                        .literals
+                        .iter()
+                        .map(|&lit| self.assignment.literal_value(lit))
+                        .collect::<Vec<_>>();
+                    panic!("Found implied clause: {} (user {}) {:?}", c, i, assn);
                 }
             }
 
-            for c in &self.clause_database.learned {
+            for (i, c) in self.clause_database.learned.iter().enumerate() {
                 if c.is_implied(&self.assignment) {
-                    panic!("Found implied clause: {}", c);
+                    let assn = c
+                        .literals
+                        .iter()
+                        .map(|&lit| self.assignment.literal_value(lit))
+                        .collect::<Vec<_>>();
+                    panic!("Found implied clause: {} (learned {}) {:?}", c, i, assn);
                 }
             }
         }

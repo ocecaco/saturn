@@ -3,6 +3,7 @@ mod solver;
 type Error = Box<dyn std::error::Error>;
 type Result<T> = std::result::Result<T, Error>;
 
+use log::debug;
 use solver::{Clause, ClauseType, Literal, Solver};
 use std::convert::TryInto;
 use std::fs::File;
@@ -59,6 +60,8 @@ fn load_dimacs(solver: &mut Solver, filename: &str) -> Result<()> {
         solver.add_clause(Clause::new(clause), ClauseType::User);
     }
 
+    debug!("Finished adding clauses");
+
     Ok(())
 }
 
@@ -67,7 +70,7 @@ fn main() -> Result<()> {
 
     let mut solver = Solver::new();
 
-    load_dimacs(&mut solver, "dubois20.cnf")?;
+    load_dimacs(&mut solver, "bf0432-007.cnf")?;
 
     println!("{:?}", solver.solve());
 
