@@ -327,7 +327,7 @@ impl Solver {
 
         let mut trail_rev = self.trail.iter().rev();
 
-        let asserting_lit = loop {
+        loop {
             let reason = self
                 .clause_database
                 .get_clause(clause)
@@ -367,24 +367,25 @@ impl Solver {
             // but which have nothing to do with the conflict.
             let lit = loop {
                 let lit = trail_rev.next().unwrap();
-                clause = self.assignment.var_reason(lit.var).unwrap();
 
                 if seen[lit.var.0] {
                     break lit;
                 }
             };
+            clause = self.assignment.var_reason(lit.var).unwrap();
             counter -= 1;
 
             if counter == 0 {
-                break lit;
-            }
-        };
+                // Found the first UIP!
 
-        // Put the asserting literal at the end, and then swap it so it
-        // ends up in position 0 (the unit propagation position)
-        let asserting_idx = output_clause.len();
-        output_clause.push(asserting_lit.negate());
-        output_clause.swap(0, asserting_idx);
+                // Put the asserting literal at the end, and then swap it so it
+                // ends up in position 0 (the unit propagation position)
+                let asserting_idx = output_clause.len();
+                output_clause.push(lit.negate());
+                output_clause.swap(0, asserting_idx);
+                break;
+            }
+        }
 
         (Clause::new_unchecked(output_clause), backtrack_level)
     }
