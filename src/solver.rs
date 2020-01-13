@@ -317,6 +317,13 @@ impl Solver {
         }
     }
 
+    fn record(&mut self, clause: Clause) {
+        // Perform unit propagation on the asserting literal
+        let asserting_lit = clause.literals[0];
+        let clause_idx = self.add_clause(clause, ClauseType::Learned);
+        self.assert_literal(asserting_lit, Some(clause_idx));
+    }
+
     fn analyze(&self, mut clause: ClauseIndex) -> (Clause, usize) {
         let mut seen = vec![false; self.assignment.num_vars()];
         let mut output_clause = Vec::new();
@@ -387,7 +394,8 @@ impl Solver {
             }
         }
 
-        (Clause::new_unchecked(output_clause), backtrack_level)
+        // TODO: Switch to new_unchecked
+        (Clause::new(output_clause).unwrap(), backtrack_level)
     }
 
     fn assume(&mut self, lit: Literal) -> bool {
@@ -510,7 +518,7 @@ impl Solver {
         Var(idx)
     }
 
-    pub fn add_clause(&mut self, clause: Clause, clause_type: ClauseType) {
+    pub fn add_clause(&mut self, clause: Clause, clause_type: ClauseType) -> ClauseIndex {
         // TODO: Set up initial watches, in incremental version this would need
         // to look at the current assignment
         let first_watch = clause.literals[0];
@@ -522,6 +530,8 @@ impl Solver {
         // clause become falsified. We don't care when they become true.
         self.watches[first_watch.negate()].push(idx);
         self.watches[second_watch.negate()].push(idx);
+
+        idx
     }
 
     pub fn solve(mut self) -> Option<Model> {
