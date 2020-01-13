@@ -150,6 +150,8 @@ impl Clause {
     }
 
     fn new_unchecked(literals: Vec<Literal>) -> Self {
+        assert!(literals.len() >= 2);
+
         Clause { literals }
     }
 
@@ -163,6 +165,22 @@ impl Clause {
             &self.literals[1..]
         };
         reason.iter().copied()
+    }
+
+    fn is_implied(&self, assignment: &Assignment) -> bool {
+        let mut count_false = 0;
+        let mut count_unassigned = 0;
+
+        for &lit in &self.literals {
+            let val = assignment.literal_value(lit);
+            match val {
+                VarValue::False => count_false += 1,
+                VarValue::Unassigned => count_unassigned += 1,
+                _ => {}
+            };
+        }
+
+        (count_false == self.literals.len() - 1) && (count_unassigned == 1)
     }
 }
 
@@ -349,6 +367,7 @@ impl Solver {
         // Perform unit propagation on the asserting literal
         let asserting_lit = clause.literals[0];
         let clause_idx = self.add_clause(clause, ClauseType::Learned);
+        debug!("Asserting literal for learned clause: {}", asserting_lit);
         self.assert_literal(asserting_lit, Some(clause_idx));
     }
 
@@ -402,6 +421,10 @@ impl Solver {
             // but which have nothing to do with the conflict.
             let lit = loop {
                 let lit = trail_rev.next().unwrap();
+                assert_eq!(
+                    self.assignment.var_level(lit.var).unwrap(),
+                    self.decision_level()
+                );
 
                 if seen[lit.var.0] {
                     break lit;
@@ -417,9 +440,12 @@ impl Solver {
 
                 // Put the asserting literal at the end, and then swap it so it
                 // ends up in position 0 (the unit propagation position)
+                debug!("adding final literal: {}", lit.negate());
                 let asserting_idx = output_clause.len();
                 output_clause.push(lit.negate());
+                debug!("clause before: {:?}", output_clause);
                 output_clause.swap(0, asserting_idx);
+                debug!("clause after: {:?}", output_clause);
                 break;
             }
 
@@ -427,7 +453,7 @@ impl Solver {
         }
 
         // TODO: Switch to new_unchecked
-        (Clause::new(output_clause).unwrap(), backtrack_level)
+        (Clause::new_unchecked(output_clause), backtrack_level)
     }
 
     fn assume(&mut self, lit: Literal) -> bool {
@@ -438,6 +464,7 @@ impl Solver {
 
     fn undo_one(&mut self) {
         let last = self.trail.pop().unwrap();
+        self.queue_head -= 1;
 
         self.assignment.assign(last.var, VarInfo::Unassigned);
     }
@@ -497,28 +524,11 @@ impl Solver {
         }
     }
 
-    fn is_clause_implied(&self, clause_index: ClauseIndex) -> bool {
-        let mut count_false = 0;
-        let mut count_unassigned = 0;
-
-        let clause = self.clause_database.get_clause(clause_index);
-        for &lit in &clause.literals {
-            let val = self.assignment.literal_value(lit);
-            match val {
-                VarValue::False => count_false += 1,
-                VarValue::Unassigned => count_unassigned += 1,
-                _ => {}
-            };
-        }
-
-        (count_false == clause.literals.len() - 1) && (count_unassigned == 1)
-    }
-
     fn handle_clause(&mut self, clause_index: ClauseIndex, lit: Literal) -> bool {
         // This function should always resubscribe to some watched literal, to
         // ensure that the number of watched literals is always equal to 2
         let unit_literal = {
-            let is_implied = self.is_clause_implied(clause_index);
+            // let is_implied = self.is_clause_implied(clause_index);
             let clause = self.clause_database.get_clause_mut(clause_index);
 
             // debug!(
@@ -562,8 +572,15 @@ impl Solver {
 
     fn propagate(&mut self) -> Option<ClauseIndex> {
         // TODO: Avoid bounds check on self.trail
+        debug!(
+            "Starting propagation {}/{}",
+            self.queue_head,
+            self.trail.len()
+        );
         while self.queue_head < self.trail.len() {
             let lit = self.trail[self.queue_head];
+
+            debug!("Processing watches for {}", lit);
 
             // We empty out the watch list as we process it. Clauses are
             // responsible for re-adding themselves to the watch list if
@@ -583,6 +600,21 @@ impl Solver {
             }
 
             self.queue_head += 1;
+        }
+
+        if cfg!(debug_assertions) {
+            // There shouldn't be any implied clauses after propagation
+            for c in &self.clause_database.clauses {
+                if c.is_implied(&self.assignment) {
+                    panic!("Found implied clause: {}", c);
+                }
+            }
+
+            for c in &self.clause_database.learned {
+                if c.is_implied(&self.assignment) {
+                    panic!("Found implied clause: {}", c);
+                }
+            }
         }
 
         None
