@@ -274,8 +274,6 @@ impl ClauseDatabase {
 pub struct Solver {
     clause_database: ClauseDatabase,
     watches: LiteralMap<Vec<ClauseIndex>>,
-    // TODO: Potentially replace propagation queue by just the trail, as in the
-    // actual MiniSAT implementation
     assignment: Assignment,
     trail: Vec<Literal>,
     trail_lim: Vec<usize>,
@@ -387,7 +385,7 @@ impl Solver {
         let mut backtrack_level = 0;
 
         let mut counter = 0;
-        let conflicting = true;
+        let mut conflicting = true;
 
         let mut trail_rev = self.trail.iter().rev();
 
@@ -454,6 +452,7 @@ impl Solver {
             }
 
             clause = self.assignment.var_reason(lit.var).unwrap();
+            conflicting = false;
         }
 
         (Clause::new_unchecked(output_clause), backtrack_level)
@@ -589,8 +588,6 @@ impl Solver {
             self.assert_literal(clause.literals[0], None);
             None
         } else {
-            // TODO: Set up initial watches, in incremental version this would need
-            // to look at the current assignment
             let first_watch = clause.literals[0];
             let second_watch = clause.literals[1];
 
