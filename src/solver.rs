@@ -128,7 +128,7 @@ pub struct Clause {
 }
 
 impl Clause {
-    pub fn new(literals: Vec<Literal>) -> Option<Self> {
+    pub fn new(literals: Vec<Literal>) -> Self {
         // TODO: Normalize clause, check for (p v ~p)
         // occurrences, and potentially use the current solver state in
         // incremental implementation
@@ -142,16 +142,10 @@ impl Clause {
 
         literals.sort();
 
-        if literals.len() >= 2 {
-            Some(Clause { literals })
-        } else {
-            None
-        }
+        Clause { literals }
     }
 
     fn new_unchecked(literals: Vec<Literal>) -> Self {
-        assert!(literals.len() >= 2);
-
         Clause { literals }
     }
 
@@ -367,8 +361,11 @@ impl Solver {
         // Perform unit propagation on the asserting literal
         let asserting_lit = clause.literals[0];
         let clause_idx = self.add_clause(clause, ClauseType::Learned);
-        debug!("Asserting literal for learned clause: {}", asserting_lit);
-        self.assert_literal(asserting_lit, Some(clause_idx));
+
+        if let Some(clause_idx) = clause_idx {
+            debug!("Asserting literal for learned clause: {}", asserting_lit);
+            self.assert_literal(asserting_lit, Some(clause_idx));
+        }
     }
 
     fn analyze(&self, mut clause: ClauseIndex) -> (Clause, usize) {
@@ -430,22 +427,16 @@ impl Solver {
                     break lit;
                 }
             };
-            debug!("Conflict analysis variable: {}", lit.var);
             counter -= 1;
-
-            debug!("Counter: {}", counter);
 
             if counter == 0 {
                 // Found the first UIP!
 
                 // Put the asserting literal at the end, and then swap it so it
                 // ends up in position 0 (the unit propagation position)
-                debug!("adding final literal: {}", lit.negate());
                 let asserting_idx = output_clause.len();
                 output_clause.push(lit.negate());
-                debug!("clause before: {:?}", output_clause);
                 output_clause.swap(0, asserting_idx);
-                debug!("clause after: {:?}", output_clause);
                 break;
             }
 
@@ -572,15 +563,8 @@ impl Solver {
 
     fn propagate(&mut self) -> Option<ClauseIndex> {
         // TODO: Avoid bounds check on self.trail
-        debug!(
-            "Starting propagation {}/{}",
-            self.queue_head,
-            self.trail.len()
-        );
         while self.queue_head < self.trail.len() {
             let lit = self.trail[self.queue_head];
-
-            debug!("Processing watches for {}", lit);
 
             // We empty out the watch list as we process it. Clauses are
             // responsible for re-adding themselves to the watch list if
@@ -629,20 +613,28 @@ impl Solver {
         Var(idx)
     }
 
-    pub fn add_clause(&mut self, clause: Clause, clause_type: ClauseType) -> ClauseIndex {
-        // TODO: Set up initial watches, in incremental version this would need
-        // to look at the current assignment
-        let first_watch = clause.literals[0];
-        let second_watch = clause.literals[1];
+    pub fn add_clause(&mut self, clause: Clause, clause_type: ClauseType) -> Option<ClauseIndex> {
+        if clause.literals.len() == 0 {
+            panic!("attempt to add empty clause");
+        } else if clause.literals.len() == 1 {
+            // TODO: What about the ROOT LEVEL?
+            self.assert_literal(clause.literals[0], None);
+            None
+        } else {
+            // TODO: Set up initial watches, in incremental version this would need
+            // to look at the current assignment
+            let first_watch = clause.literals[0];
+            let second_watch = clause.literals[1];
 
-        let idx = self.clause_database.add_clause(clause, clause_type);
+            let idx = self.clause_database.add_clause(clause, clause_type);
 
-        // We watch the negations, because we want to know when literals in our
-        // clause become falsified. We don't care when they become true.
-        self.watches[first_watch.negate()].push(idx);
-        self.watches[second_watch.negate()].push(idx);
+            // We watch the negations, because we want to know when literals in our
+            // clause become falsified. We don't care when they become true.
+            self.watches[first_watch.negate()].push(idx);
+            self.watches[second_watch.negate()].push(idx);
 
-        idx
+            Some(idx)
+        }
     }
 
     fn search(&mut self) -> Option<Model> {

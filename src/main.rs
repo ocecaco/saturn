@@ -56,7 +56,7 @@ fn load_dimacs(solver: &mut Solver, filename: &str) -> Result<()> {
             }
         }
 
-        solver.add_clause(Clause::new(clause).unwrap(), ClauseType::User);
+        solver.add_clause(Clause::new(clause), ClauseType::User);
     }
 
     Ok(())
@@ -69,7 +69,7 @@ fn main() -> Result<()> {
 
     load_dimacs(&mut solver, "dubois20.cnf")?;
 
-    println!("{:?}", solver.solve().unwrap());
+    println!("{:?}", solver.solve());
 
     Ok(())
 }
