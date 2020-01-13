@@ -161,6 +161,35 @@ impl Clause {
         reason.iter().copied()
     }
 
+    fn watch_triggered(
+        &mut self,
+        lit: Literal,
+        assignment: &Assignment,
+    ) -> (Literal, Option<Literal>) {
+        // Ensure that the falsified watched literal is in index 1
+        if self.literals[0] == lit.negate() {
+            self.literals.swap(0, 1);
+        }
+
+        // The other watched literal is already true: the clause is satisfied.
+        if assignment.literal_value(self.literals[0]) == VarValue::True {
+            return (lit, None);
+        }
+
+        // Find new literal to watch
+        for (i, &alternative) in self.literals.iter().enumerate().skip(2) {
+            if assignment.literal_value(alternative) != VarValue::False {
+                // Found one! No need to do unit propagation
+                self.literals.swap(1, i);
+                return (self.literals[1].negate(), None);
+            }
+        }
+
+        // If we didn't find a new literal, then this is a unit clause. Perform
+        // unit propagation.
+        (lit, Some(self.literals[0]))
+    }
+
     fn is_implied(&self, assignment: &Assignment) -> bool {
         let mut count_false = 0;
         let mut count_unassigned = 0;
@@ -515,52 +544,6 @@ impl Solver {
         }
     }
 
-    fn handle_clause(&mut self, clause_index: ClauseIndex, lit: Literal) -> bool {
-        // This function should always resubscribe to some watched literal, to
-        // ensure that the number of watched literals is always equal to 2
-        let unit_literal = {
-            // let is_implied = self.is_clause_implied(clause_index);
-            let clause = self.clause_database.get_clause_mut(clause_index);
-
-            // debug!(
-            //     "Watched literal {} for clause {} (implied: {})",
-            //     lit,
-            //     clause,
-            //     if is_implied { "yes" } else { "no" }
-            // );
-
-            // Ensure that the falsified watched literal is in index 1
-            if clause.literals[0] == lit.negate() {
-                clause.literals.swap(0, 1);
-            }
-
-            // The other watched literal is already true: the clause is satisfied.
-            if self.assignment.literal_value(clause.literals[0]) == VarValue::True {
-                self.watches[lit].push(clause_index);
-                return true;
-            }
-
-            // Find new literal to watch
-            for (i, &alternative) in clause.literals[2..].iter().enumerate() {
-                if self.assignment.literal_value(alternative) != VarValue::False {
-                    // Found one!
-
-                    // +2 because we have a slice that starts at index 2
-                    clause.literals.swap(1, i + 2);
-                    self.watches[clause.literals[1].negate()].push(clause_index);
-                    return true;
-                }
-            }
-
-            clause.literals[0]
-        };
-
-        // If we didn't find a new literal, then this is a unit clause. Perform
-        // unit propagation.
-        self.watches[lit].push(clause_index);
-        return self.assert_literal(unit_literal, Some(clause_index));
-    }
-
     fn propagate(&mut self) -> Option<ClauseIndex> {
         // TODO: Avoid bounds check on self.trail
         while self.queue_head < self.trail.len() {
@@ -575,16 +558,28 @@ impl Solver {
             for i in 0..watches.len() {
                 let c_idx = watches[i];
 
-                if !self.handle_clause(c_idx, lit) {
-                    // Copy back the remaining watches, so we ensure that no
-                    // watch pointers are lost, even when backtracking/conflict
-                    // occurs.
-                    self.watches[lit].extend_from_slice(&watches[i + 1..]);
+                let (new_watch, maybe_prop) = self
+                    .clause_database
+                    .get_clause_mut(c_idx)
+                    .watch_triggered(lit, &self.assignment);
 
-                    // Clear the queue
-                    self.queue_head = self.trail.len();
-                    debug!("Conflict! {}", self.clause_database.get_clause(c_idx));
-                    return Some(c_idx);
+                // Re-add this clause to the given watch list, since we removed
+                // it from one.
+                self.watches[new_watch].push(c_idx);
+
+                // Perform unit propagation if necessary
+                if let Some(prop) = maybe_prop {
+                    if !self.assert_literal(prop, Some(c_idx)) {
+                        // Copy back the remaining watches, so we ensure that no
+                        // watch pointers are lost, even when backtracking/conflict
+                        // occurs.
+                        self.watches[lit].extend_from_slice(&watches[i + 1..]);
+
+                        // Clear the queue
+                        self.queue_head = self.trail.len();
+                        debug!("Conflict! {}", self.clause_database.get_clause(c_idx));
+                        return Some(c_idx);
+                    }
                 }
 
                 if cfg!(debug_assertions) {
