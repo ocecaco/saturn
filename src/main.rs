@@ -6,6 +6,7 @@ type Result<T> = std::result::Result<T, Error>;
 use log::debug;
 use solver::{Clause, ClauseType, Literal, Solver};
 use std::convert::TryInto;
+use std::env;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
@@ -68,9 +69,11 @@ fn load_dimacs(solver: &mut Solver, filename: &str) -> Result<()> {
 fn main() -> Result<()> {
     env_logger::init();
 
+    let args: Vec<_> = env::args().collect();
+
     let mut solver = Solver::new();
 
-    load_dimacs(&mut solver, "bf0432-007.cnf")?;
+    load_dimacs(&mut solver, &args[1])?;
 
     println!("{:?}", solver.solve());
 
