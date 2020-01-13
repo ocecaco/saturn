@@ -63,6 +63,8 @@ fn load_dimacs(solver: &mut Solver, filename: &str) -> Result<()> {
 }
 
 fn main() -> Result<()> {
+    env_logger::init();
+
     let mut solver = Solver::new();
 
     load_dimacs(&mut solver, "dubois20.cnf")?;

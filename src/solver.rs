@@ -1,7 +1,10 @@
 use std::cmp;
 use std::collections::HashSet;
+use std::fmt;
 use std::mem;
 use std::ops::{Index, IndexMut};
+
+use log::debug;
 
 struct LiteralInfo<T> {
     positive: T,
@@ -53,11 +56,26 @@ type ClauseIndex = (ClauseType, usize);
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Var(usize);
 
+impl fmt::Display for Var {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 // TODO: Possibly indicate sign by making literal negative/positive
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Literal {
     sign: Sign,
     var: Var,
+}
+
+impl fmt::Display for Literal {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.sign {
+            Sign::Positive => write!(f, "{}", self.var),
+            Sign::Negative => write!(f, "-{}", self.var),
+        }
+    }
 }
 
 impl Literal {
@@ -143,6 +161,21 @@ impl Clause {
             &self.literals[1..]
         };
         reason.iter().copied()
+    }
+}
+
+impl fmt::Display for Clause {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "[")?;
+        let mut items = self.literals.iter();
+        if let Some(x) = items.next() {
+            write!(f, "{}", x)?;
+
+            for i in items {
+                write!(f, ", {}", i)?;
+            }
+        }
+        write!(f, "]")
     }
 }
 
@@ -393,6 +426,7 @@ impl Solver {
 
     fn assume(&mut self, lit: Literal) -> bool {
         self.trail_lim.push(self.trail.len());
+        debug!("New decision level: {}", self.decision_level());
         self.assert_literal(lit, None)
     }
 
@@ -426,6 +460,17 @@ impl Solver {
         match self.assignment.literal_value(lit) {
             VarValue::Unassigned => match lit.assignment() {
                 (var, value) => {
+                    debug!(
+                        "Assignment: {} -> {} at level {} ({})",
+                        var,
+                        value,
+                        self.decision_level(),
+                        if let Some(idx) = reason {
+                            format!("implied by {}", self.clause_database.get_clause(idx))
+                        } else {
+                            "decision".to_owned()
+                        }
+                    );
                     self.assignment.assign(
                         var,
                         VarInfo::Assigned {
@@ -498,6 +543,7 @@ impl Solver {
 
                     // Clear the queue
                     self.queue_head = self.trail.len();
+                    debug!("Conflict! {}", self.clause_database.get_clause(c_idx));
                     return Some(c_idx);
                 }
             }
