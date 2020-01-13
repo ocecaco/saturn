@@ -189,22 +189,6 @@ impl Clause {
         // unit propagation.
         (lit, Some(self.literals[0]))
     }
-
-    fn is_implied(&self, assignment: &Assignment) -> bool {
-        let mut count_false = 0;
-        let mut count_unassigned = 0;
-
-        for &lit in &self.literals {
-            let val = assignment.literal_value(lit);
-            match val {
-                VarValue::False => count_false += 1,
-                VarValue::Unassigned => count_unassigned += 1,
-                _ => {}
-            };
-        }
-
-        (count_false == self.literals.len() - 1) && (count_unassigned == 1)
-    }
 }
 
 impl fmt::Display for Clause {
@@ -472,7 +456,6 @@ impl Solver {
             clause = self.assignment.var_reason(lit.var).unwrap();
         }
 
-        // TODO: Switch to new_unchecked
         (Clause::new_unchecked(output_clause), backtrack_level)
     }
 
@@ -581,51 +564,9 @@ impl Solver {
                         return Some(c_idx);
                     }
                 }
-
-                if cfg!(debug_assertions) {
-                    let clause = self.clause_database.get_clause(c_idx);
-                    let watch1 = clause.literals[0];
-                    let watch2 = clause.literals[1];
-                    let check1 = self.watches[watch1.negate()].contains(&c_idx);
-                    let check2 = self.watches[watch2.negate()].contains(&c_idx);
-                    if !check1 || !check2 {
-                        panic!(
-                            "Watch invariant violation on {:?} {} {} {}",
-                            c_idx,
-                            self.clause_database.get_clause(c_idx),
-                            check1,
-                            check2
-                        );
-                    }
-                }
             }
 
             self.queue_head += 1;
-        }
-
-        if cfg!(debug_assertions) {
-            // There shouldn't be any implied clauses after propagation
-            for (i, c) in self.clause_database.clauses.iter().enumerate() {
-                if c.is_implied(&self.assignment) {
-                    let assn = c
-                        .literals
-                        .iter()
-                        .map(|&lit| self.assignment.literal_value(lit))
-                        .collect::<Vec<_>>();
-                    panic!("Found implied clause: {} (user {}) {:?}", c, i, assn);
-                }
-            }
-
-            for (i, c) in self.clause_database.learned.iter().enumerate() {
-                if c.is_implied(&self.assignment) {
-                    let assn = c
-                        .literals
-                        .iter()
-                        .map(|&lit| self.assignment.literal_value(lit))
-                        .collect::<Vec<_>>();
-                    panic!("Found implied clause: {} (learned {}) {:?}", c, i, assn);
-                }
-            }
         }
 
         None
