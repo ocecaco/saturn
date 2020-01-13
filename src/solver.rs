@@ -405,8 +405,10 @@ impl Solver {
                     break lit;
                 }
             };
-            clause = self.assignment.var_reason(lit.var).unwrap();
+            debug!("Conflict analysis variable: {}", lit.var);
             counter -= 1;
+
+            debug!("Counter: {}", counter);
 
             if counter == 0 {
                 // Found the first UIP!
@@ -418,6 +420,8 @@ impl Solver {
                 output_clause.swap(0, asserting_idx);
                 break;
             }
+
+            clause = self.assignment.var_reason(lit.var).unwrap();
         }
 
         // TODO: Switch to new_unchecked
@@ -445,6 +449,7 @@ impl Solver {
     }
 
     fn cancel_until(&mut self, decision_level: usize) {
+        debug!("Backtracking to level {}", decision_level);
         while self.decision_level() > decision_level {
             self.cancel();
         }
@@ -590,6 +595,7 @@ impl Solver {
 
                 let (learned_clause, backtrack_level) = self.analyze(conflict);
                 self.cancel_until(backtrack_level);
+                debug!("New learned clause: {}", learned_clause);
                 self.record(learned_clause);
             } else {
                 // If all variables are assigned, then we have a satisfying
