@@ -1,7 +1,7 @@
 use std::cmp;
 use std::collections::HashSet;
 use std::mem;
-use std::ops::{Index, IndexMut, Not};
+use std::ops::{Index, IndexMut};
 
 struct LiteralInfo<T> {
     positive: T,
@@ -61,7 +61,7 @@ pub struct Literal {
 }
 
 impl Literal {
-    fn negate(&self) -> Literal {
+    pub fn negate(&self) -> Literal {
         Literal {
             sign: self.sign.flip(),
             var: self.var,
@@ -78,17 +78,6 @@ impl From<Var> for Literal {
         Literal {
             sign: Sign::Positive,
             var,
-        }
-    }
-}
-
-impl Not for Literal {
-    type Output = Literal;
-
-    fn not(self) -> Self::Output {
-        Literal {
-            sign: self.sign.flip(),
-            var: self.var,
         }
     }
 }
