@@ -317,6 +317,10 @@ impl Solver {
         }
     }
 
+    fn num_assigns(&self) -> usize {
+        self.trail.len()
+    }
+
     fn record(&mut self, clause: Clause) {
         // Perform unit propagation on the asserting literal
         let asserting_lit = clause.literals[0];
@@ -417,6 +421,12 @@ impl Solver {
         }
     }
 
+    fn cancel_until(&mut self, decision_level: usize) {
+        while self.decision_level() > decision_level {
+            self.cancel();
+        }
+    }
+
     fn decision_level(&self) -> usize {
         self.trail_lim.len()
     }
@@ -482,7 +492,7 @@ impl Solver {
         return self.assert_literal(unit_literal, Some(clause_index));
     }
 
-    fn propagate(&mut self) -> bool {
+    fn propagate(&mut self) -> Option<ClauseIndex> {
         // TODO: Avoid bounds check on self.trail
         while self.queue_head < self.trail.len() {
             let lit = self.trail[self.queue_head];
@@ -499,14 +509,14 @@ impl Solver {
 
                     // Clear the queue
                     self.queue_head = self.trail.len();
-                    return false;
+                    return Some(c_idx);
                 }
             }
 
             self.queue_head += 1;
         }
 
-        true
+        None
     }
 
     pub fn new_var(&mut self) -> Var {
@@ -534,10 +544,47 @@ impl Solver {
         idx
     }
 
+    fn search(&mut self) -> Option<Model> {
+        loop {
+            let maybe_conflict = self.propagate();
+            if let Some(conflict) = maybe_conflict {
+                // Conflict at root level means the formula is unsatisfiable
+                if self.decision_level() == 0 {
+                    return None;
+                }
+
+                let (learned_clause, backtrack_level) = self.analyze(conflict);
+                self.cancel_until(backtrack_level);
+                self.record(learned_clause);
+            } else {
+                // If all variables are assigned, then we have a satisfying
+                // assignment.
+                if self.num_assigns() == self.assignment.num_vars() {
+                    let model = Some(Model::from_assignment(&self.assignment));
+                    self.cancel_until(0);
+                    return model;
+                } else {
+                    // Pick a new variable to assign
+
+                    // For now, simply pick the first unassigned variable. TODO:
+                    // Use a more optimized strategy.
+                    let mut vars = self.assignment.values.iter().enumerate();
+                    let var = loop {
+                        let (i, info) = vars.next().unwrap();
+                        if let VarInfo::Unassigned = info {
+                            break Var(i);
+                        }
+                    };
+
+                    self.assume(var.into());
+                }
+            }
+        }
+    }
+
     pub fn solve(mut self) -> Option<Model> {
         // TODO: Maybe do unit propagation at the beginning to handle unit
         // clauses which are there from the beginning.
-
-        unimplemented!();
+        self.search()
     }
 }
