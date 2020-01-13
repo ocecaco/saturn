@@ -1,4 +1,5 @@
-use std::collections::{HashSet, VecDeque};
+use std::cmp;
+use std::collections::HashSet;
 use std::mem;
 use std::ops::{Index, IndexMut, Not};
 
@@ -142,6 +143,18 @@ impl Clause {
     fn new_unchecked(literals: Vec<Literal>) -> Self {
         Clause { literals }
     }
+
+    fn calc_reason<'a>(&'a self, conflicting: bool) -> impl Iterator<Item = Literal> + 'a {
+        // If this is a conflicting clause, then all of the literals are part of
+        // the reason set. Otherwise, the first literal is not, since it is the
+        // implied literal of the unit propagation.
+        let reason = if conflicting {
+            &self.literals[..]
+        } else {
+            &self.literals[1..]
+        };
+        reason.iter().copied()
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -246,6 +259,20 @@ impl Assignment {
         }
     }
 
+    fn var_level(&self, var: Var) -> Option<usize> {
+        match self.values[var.0] {
+            VarInfo::Assigned { level, .. } => Some(level),
+            VarInfo::Unassigned => None,
+        }
+    }
+
+    fn var_reason(&self, var: Var) -> Option<ClauseIndex> {
+        match self.values[var.0] {
+            VarInfo::Assigned { reason, .. } => reason,
+            VarInfo::Unassigned => None,
+        }
+    }
+
     fn literal_value(&self, lit: Literal) -> VarValue {
         let var_value = self.var_value(lit.var);
 
@@ -288,6 +315,78 @@ impl Solver {
             trail_lim: Vec::new(),
             queue_head: 0,
         }
+    }
+
+    fn analyze(&self, mut clause: ClauseIndex) -> (Clause, usize) {
+        let mut seen = vec![false; self.assignment.num_vars()];
+        let mut output_clause = Vec::new();
+        let mut backtrack_level = 0;
+
+        let mut counter = 0;
+        let conflicting = true;
+
+        let mut trail_rev = self.trail.iter().rev();
+
+        let asserting_lit = loop {
+            let reason = self
+                .clause_database
+                .get_clause(clause)
+                .calc_reason(conflicting);
+
+            for lit in reason {
+                if !seen[lit.var.0] {
+                    seen[lit.var.0] = true;
+
+                    let var_level = self
+                        .assignment
+                        .var_level(lit.var)
+                        .expect("unassigned literals cannot be part of a reason set");
+
+                    if var_level == self.decision_level() {
+                        // Simply count the number of reason literals that are on
+                        // this decision level (without duplicates, since we keep
+                        // track of whether we've seen variables already in the
+                        // `seen` array). We will run into them as we progress along
+                        // the trail backwards. By counting them, we can determine
+                        // whether we've reached the first UIP.
+                        counter += 1;
+                    } else {
+                        output_clause.push(lit.negate());
+                        // We keep track of the decision level we need to
+                        // backtrack to in order to make the UIP literal
+                        // asserting. This is the highest decision level below
+                        // the current decision level.
+                        backtrack_level = cmp::max(backtrack_level, var_level);
+                    }
+                }
+            }
+
+            // We look for a literal that we've seen, because that means that it
+            // was part of the (transitive) reason set somewhere. Other literals
+            // are simply literals that have been set due to unit propagation,
+            // but which have nothing to do with the conflict.
+            let lit = loop {
+                let lit = trail_rev.next().unwrap();
+                clause = self.assignment.var_reason(lit.var).unwrap();
+
+                if seen[lit.var.0] {
+                    break lit;
+                }
+            };
+            counter -= 1;
+
+            if counter == 0 {
+                break lit;
+            }
+        };
+
+        // Put the asserting literal at the end, and then swap it so it
+        // ends up in position 0 (the unit propagation position)
+        let asserting_idx = output_clause.len();
+        output_clause.push(asserting_lit.negate());
+        output_clause.swap(0, asserting_idx);
+
+        (Clause::new_unchecked(output_clause), backtrack_level)
     }
 
     fn assume(&mut self, lit: Literal) -> bool {

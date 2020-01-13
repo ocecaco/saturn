@@ -1,8 +1,6 @@
 #![allow(dead_code)]
 mod solver;
 
-use solver::{Clause, ClauseType, Solver};
-
 fn main() {
     // let mut solver = Solver::new();
     // let a = solver.new_var().into();
