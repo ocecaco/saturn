@@ -1,5 +1,4 @@
 use crate::types::Clause;
-#[cfg(debug_assertions)]
 use crate::util::LiteralMap;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -55,7 +54,6 @@ impl ClauseDatabase {
         }
     }
 
-    #[cfg(debug_assertions)]
     pub(crate) fn expected_watches(&self, watches: &mut LiteralMap<Vec<ClauseIndex>>) {
         for (i, c) in self.clauses.iter().enumerate() {
             let idx = ClauseIndex {

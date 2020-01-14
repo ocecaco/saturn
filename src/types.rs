@@ -1,5 +1,4 @@
 use log::debug;
-#[cfg(debug_assertions)]
 use std::cmp;
 use std::collections::HashSet;
 use std::fmt;
@@ -148,7 +147,6 @@ impl Clause {
         (lit, Some(self.literals[0]))
     }
 
-    #[cfg(debug_assertions)]
     pub(crate) fn is_implied(&self, assignment: &Assignment) -> bool {
         let mut num_false = 0;
         let mut num_unassigned = 0;
@@ -164,7 +162,6 @@ impl Clause {
         (num_unassigned == 1) && (num_false == self.literals.len() - 1)
     }
 
-    #[cfg(debug_assertions)]
     pub(crate) fn check_valid_learned(
         &self,
         current_level: usize,

@@ -1,12 +1,10 @@
 use log::debug;
 use std::cmp;
-#[cfg(debug_assertions)]
 use std::collections::HashSet;
 use std::mem;
 
 use crate::assignment::{Assignment, VarInfo, VarValue};
 use crate::clausedb::{ClauseDatabase, ClauseIndex, ClauseType};
-#[cfg(debug_assertions)]
 use crate::types::Sign;
 use crate::types::{Clause, Literal, Model, Var};
 use crate::util::LiteralMap;
@@ -33,7 +31,6 @@ impl Solver {
         }
     }
 
-    #[cfg(debug_assertions)]
     fn check_watches(&self) {
         let mut watches_expected = LiteralMap::new();
         for _ in 0..self.assignment.num_vars() {
@@ -66,7 +63,6 @@ impl Solver {
         debug!("Successfully checked watches");
     }
 
-    #[cfg(debug_assertions)]
     fn check_implied(&self) {
         for c in &self.clause_database.clauses {
             if c.is_implied(&self.assignment) {
@@ -369,9 +365,11 @@ impl Solver {
                 // If all variables are assigned, then we have a satisfying
                 // assignment.
                 if self.num_assigns() == self.assignment.num_vars() {
-                    for v in &self.assignment.values {
-                        if let VarInfo::Unassigned = v {
-                            panic!("Found unassigned!");
+                    if cfg!(debug_assertions) {
+                        for v in &self.assignment.values {
+                            if let VarInfo::Unassigned = v {
+                                panic!("Found unassigned!");
+                            }
                         }
                     }
 
