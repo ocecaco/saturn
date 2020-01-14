@@ -343,8 +343,16 @@ impl Solver {
                 }
 
                 let (learned_clause, backtrack_level) = self.analyze(conflict);
-                self.cancel_until(backtrack_level);
                 debug!("New learned clause: {}", learned_clause);
+                if cfg!(debug_assertions) {
+                    learned_clause.check_valid_learned(
+                        self.decision_level(),
+                        backtrack_level,
+                        &self.assignment,
+                    );
+                }
+
+                self.cancel_until(backtrack_level);
                 self.record(learned_clause);
             } else {
                 if cfg!(debug_assertions) {

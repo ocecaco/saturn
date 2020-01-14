@@ -1,3 +1,5 @@
+#[cfg(debug_assertions)]
+use std::cmp;
 use std::collections::HashSet;
 use std::fmt;
 
@@ -155,6 +157,41 @@ impl Clause {
         }
 
         (num_unassigned == 1) && (num_false == self.literals.len() - 1)
+    }
+
+    #[cfg(debug_assertions)]
+    pub(crate) fn check_valid_learned(
+        &self,
+        current_level: usize,
+        actual_backtrack_level: usize,
+        assignment: &Assignment,
+    ) {
+        // A valid learned clause is a clause that is currently falsified, and
+        // which contains precisely one literal from the current decision level
+        // at position 0
+        let mut num_current_level = 0;
+        let mut expected_backtrack_level = 0;
+
+        for &lit in &self.literals {
+            assert_eq!(assignment.literal_value(lit), VarValue::False);
+
+            if let Some(lvl) = assignment.var_level(lit.var) {
+                if lvl == current_level {
+                    num_current_level += 1;
+                } else {
+                    expected_backtrack_level = cmp::max(expected_backtrack_level, lvl);
+                }
+            }
+        }
+
+        assert_eq!(num_current_level, 1);
+
+        assert_eq!(
+            assignment.var_level(self.literals[0].var),
+            Some(current_level)
+        );
+
+        assert_eq!(actual_backtrack_level, expected_backtrack_level);
     }
 }
 
