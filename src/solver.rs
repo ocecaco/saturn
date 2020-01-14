@@ -132,6 +132,7 @@ impl Solver {
                         // whether we've reached the first UIP.
                         counter += 1;
                     } else {
+                        assert_eq!(self.assignment.literal_value(lit.negate()), VarValue::False);
                         output_clause.push(lit.negate());
                         // We keep track of the decision level we need to
                         // backtrack to in order to make the UIP literal
@@ -165,6 +166,7 @@ impl Solver {
                 // Put the asserting literal at the end, and then swap it so it
                 // ends up in position 0 (the unit propagation position)
                 let asserting_idx = output_clause.len();
+                assert_eq!(self.assignment.literal_value(lit.negate()), VarValue::False);
                 output_clause.push(lit.negate());
                 output_clause.swap(0, asserting_idx);
                 break;
@@ -353,6 +355,11 @@ impl Solver {
                 }
 
                 self.cancel_until(backtrack_level);
+
+                if cfg!(debug_assertions) {
+                    self.check_implied();
+                }
+
                 self.record(learned_clause);
             } else {
                 if cfg!(debug_assertions) {

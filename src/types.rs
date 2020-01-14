@@ -1,3 +1,4 @@
+use log::debug;
 #[cfg(debug_assertions)]
 use std::cmp;
 use std::collections::HashSet;
@@ -111,7 +112,11 @@ impl Clause {
         } else {
             &self.literals[1..]
         };
-        reason.iter().copied()
+
+        // Negated, because the reason for our tail literals being all False
+        // (and thus for this clause being implied) is
+        // that their negations were True
+        reason.iter().copied().map(|lit| lit.negate())
     }
 
     pub fn watch_triggered(
@@ -173,7 +178,12 @@ impl Clause {
         let mut expected_backtrack_level = 0;
 
         for &lit in &self.literals {
-            assert_eq!(assignment.literal_value(lit), VarValue::False);
+            assert_eq!(
+                assignment.literal_value(lit),
+                VarValue::False,
+                "Found true literal: {}",
+                lit
+            );
 
             if let Some(lvl) = assignment.var_level(lit.var) {
                 if lvl == current_level {
@@ -192,6 +202,8 @@ impl Clause {
         );
 
         assert_eq!(actual_backtrack_level, expected_backtrack_level);
+
+        debug!("Successfully checked learned clause");
     }
 }
 
