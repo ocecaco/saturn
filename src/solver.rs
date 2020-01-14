@@ -328,6 +328,24 @@ impl Solver {
         }
     }
 
+    fn check_model(&self) {
+        // Check that the current assignment satisfies all (non-learned) clauses
+        for c in &self.clause_database.clauses {
+            let mut satisfied = false;
+
+            for &lit in &c.literals {
+                if self.assignment.literal_value(lit) == VarValue::True {
+                    satisfied = true;
+                    break;
+                }
+            }
+
+            assert!(satisfied);
+        }
+
+        debug!("Successfully checked model");
+    }
+
     fn search(&mut self) -> Option<Model> {
         loop {
             let maybe_conflict = self.propagate();
@@ -372,6 +390,8 @@ impl Solver {
                             }
                         }
                     }
+
+                    self.check_model();
 
                     let model = Some(Model::from_assignment(&self.assignment));
                     self.cancel_until(0);
