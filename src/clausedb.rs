@@ -1,20 +1,22 @@
 use crate::types::Clause;
+#[cfg(debug_assertions)]
+use crate::util::LiteralMap;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum ClauseType {
     User,
     Learned,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct ClauseIndex {
     ty: ClauseType,
     offset: usize,
 }
 
 pub(crate) struct ClauseDatabase {
-    clauses: Vec<Clause>,
-    learned: Vec<Clause>,
+    pub(crate) clauses: Vec<Clause>,
+    pub(crate) learned: Vec<Clause>,
 }
 
 impl ClauseDatabase {
@@ -50,6 +52,29 @@ impl ClauseDatabase {
         ClauseIndex {
             ty: clause_type,
             offset: idx,
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    pub(crate) fn expected_watches(&self, watches: &mut LiteralMap<Vec<ClauseIndex>>) {
+        for (i, c) in self.clauses.iter().enumerate() {
+            let idx = ClauseIndex {
+                ty: ClauseType::User,
+                offset: i,
+            };
+
+            watches[c.literals[0].negate()].push(idx);
+            watches[c.literals[1].negate()].push(idx);
+        }
+
+        for (i, c) in self.learned.iter().enumerate() {
+            let idx = ClauseIndex {
+                ty: ClauseType::Learned,
+                offset: i,
+            };
+
+            watches[c.literals[0].negate()].push(idx);
+            watches[c.literals[1].negate()].push(idx);
         }
     }
 }

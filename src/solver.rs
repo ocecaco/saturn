@@ -1,9 +1,13 @@
 use log::debug;
 use std::cmp;
+#[cfg(debug_assertions)]
+use std::collections::HashSet;
 use std::mem;
 
 use crate::assignment::{Assignment, VarInfo, VarValue};
 use crate::clausedb::{ClauseDatabase, ClauseIndex, ClauseType};
+#[cfg(debug_assertions)]
+use crate::types::Sign;
 use crate::types::{Clause, Literal, Model, Var};
 use crate::util::LiteralMap;
 
@@ -27,6 +31,56 @@ impl Solver {
             trail_lim: Vec::new(),
             queue_head: 0,
         }
+    }
+
+    #[cfg(debug_assertions)]
+    fn check_watches(&self) {
+        let mut watches_expected = LiteralMap::new();
+        for _ in 0..self.assignment.num_vars() {
+            watches_expected.push(Vec::new(), Vec::new());
+        }
+
+        // Get the expected watch lists
+        self.clause_database.expected_watches(&mut watches_expected);
+
+        // Compare to see if there is a difference, ignoring ordering of clauses in the watch lists
+        for i in 0..self.assignment.num_vars() {
+            for &sign in &[Sign::Positive, Sign::Negative] {
+                let lit = Literal { sign, var: Var(i) };
+
+                let actual = &self.watches[lit];
+                let expected = &watches_expected[lit];
+
+                let actual: HashSet<_> = actual.iter().copied().collect();
+                let expected: HashSet<_> = expected.iter().copied().collect();
+
+                let diff: Vec<_> = actual.symmetric_difference(&expected).copied().collect();
+
+                if diff.len() > 0 {
+                    panic!("Watch list invariant violation for literal {}: Expected {:?}, Found {:?}, Diff {:?}",
+                           lit, expected, actual, diff);
+                }
+            }
+        }
+
+        debug!("Successfully checked watches");
+    }
+
+    #[cfg(debug_assertions)]
+    fn check_implied(&self) {
+        for c in &self.clause_database.clauses {
+            if c.is_implied(&self.assignment) {
+                panic!("Found implied clause in user clauses");
+            }
+        }
+
+        for c in &self.clause_database.clauses {
+            if c.is_implied(&self.assignment) {
+                panic!("Found implied clause in learned clauses");
+            }
+        }
+
+        debug!("Successfully checked for implied clauses");
     }
 
     fn num_assigns(&self) -> usize {
@@ -225,6 +279,7 @@ impl Solver {
                         // Clear the queue
                         self.queue_head = self.trail.len();
                         debug!("Conflict! {}", self.clause_database.get_clause(c_idx));
+
                         return Some(c_idx);
                     }
                 }
@@ -278,6 +333,10 @@ impl Solver {
     fn search(&mut self) -> Option<Model> {
         loop {
             let maybe_conflict = self.propagate();
+            if cfg!(debug_assertions) {
+                self.check_watches();
+                self.check_implied();
+            }
             if let Some(conflict) = maybe_conflict {
                 // Conflict at root level means the formula is unsatisfiable
                 if self.decision_level() == 0 {

@@ -140,6 +140,22 @@ impl Clause {
         // unit propagation.
         (lit, Some(self.literals[0]))
     }
+
+    #[cfg(debug_assertions)]
+    pub(crate) fn is_implied(&self, assignment: &Assignment) -> bool {
+        let mut num_false = 0;
+        let mut num_unassigned = 0;
+
+        for &lit in &self.literals {
+            match assignment.literal_value(lit) {
+                VarValue::Unassigned => num_unassigned += 1,
+                VarValue::False => num_false += 1,
+                VarValue::True => {}
+            }
+        }
+
+        (num_unassigned == 1) && (num_false == self.literals.len() - 1)
+    }
 }
 
 impl fmt::Display for Clause {
