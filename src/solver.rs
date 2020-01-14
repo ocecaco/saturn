@@ -335,7 +335,6 @@ impl Solver {
             let maybe_conflict = self.propagate();
             if cfg!(debug_assertions) {
                 self.check_watches();
-                self.check_implied();
             }
             if let Some(conflict) = maybe_conflict {
                 // Conflict at root level means the formula is unsatisfiable
@@ -348,6 +347,10 @@ impl Solver {
                 debug!("New learned clause: {}", learned_clause);
                 self.record(learned_clause);
             } else {
+                if cfg!(debug_assertions) {
+                    self.check_implied();
+                }
+
                 // If all variables are assigned, then we have a satisfying
                 // assignment.
                 if self.num_assigns() == self.assignment.num_vars() {
