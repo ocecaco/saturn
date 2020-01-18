@@ -3,7 +3,7 @@ use std::cmp;
 use std::collections::HashSet;
 use std::fmt;
 
-use crate::assignment::{Assignment, VarInfo, VarValue};
+use crate::assignment::{Assignment, VarInfo};
 use crate::util::VarMap;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -129,13 +129,13 @@ impl Clause {
         }
 
         // The other watched literal is already true: the clause is satisfied.
-        if assignment.literal_value(self.literals[0]) == VarValue::True {
+        if assignment.literal_value(self.literals[0]) == Some(true) {
             return (lit, None);
         }
 
         // Find new literal to watch
         for (i, &alternative) in self.literals.iter().enumerate().skip(2) {
-            if assignment.literal_value(alternative) != VarValue::False {
+            if assignment.literal_value(alternative) != Some(false) {
                 // Found one! No need to do unit propagation
                 self.literals.swap(1, i);
                 return (self.literals[1].negate(), None);
@@ -177,7 +177,7 @@ impl Clause {
         for &lit in &self.literals {
             assert_eq!(
                 assignment.literal_value(lit),
-                VarValue::False,
+                Some(false),
                 "Found true literal: {}",
                 lit
             );

@@ -2,23 +2,6 @@ use crate::clausedb::ClauseIndex;
 use crate::types::{Literal, Sign, Var};
 use crate::util::VarMap;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum VarValue {
-    True,
-    False,
-    Unassigned,
-}
-
-impl VarValue {
-    fn negate(&self) -> VarValue {
-        match self {
-            VarValue::True => VarValue::False,
-            VarValue::False => VarValue::True,
-            VarValue::Unassigned => VarValue::Unassigned,
-        }
-    }
-}
-
 pub enum VarInfo {
     Assigned {
         value: bool,
@@ -45,11 +28,10 @@ impl Assignment {
         self.values.len()
     }
 
-    pub fn var_value(&self, var: Var) -> VarValue {
+    pub fn var_value(&self, var: Var) -> Option<bool> {
         match self.values[var.0] {
-            VarInfo::Assigned { value: true, .. } => VarValue::True,
-            VarInfo::Assigned { value: false, .. } => VarValue::False,
-            VarInfo::Unassigned => VarValue::Unassigned,
+            VarInfo::Assigned { value: v, .. } => Some(v),
+            VarInfo::Unassigned => None,
         }
     }
 
@@ -67,12 +49,12 @@ impl Assignment {
         }
     }
 
-    pub fn literal_value(&self, lit: Literal) -> VarValue {
+    pub fn literal_value(&self, lit: Literal) -> Option<bool> {
         let var_value = self.var_value(lit.var);
 
         match lit.sign {
             Sign::Positive => var_value,
-            Sign::Negative => var_value.negate(),
+            Sign::Negative => var_value.map(|v| !v),
         }
     }
 

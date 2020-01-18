@@ -2,7 +2,7 @@ use log::debug;
 use std::cmp;
 use std::mem;
 
-use crate::assignment::{Assignment, VarInfo, VarValue};
+use crate::assignment::{Assignment, VarInfo};
 use crate::clausedb::{ClauseDatabase, ClauseIndex, ClauseType};
 use crate::types::{Clause, Literal, Model, Var};
 use crate::util::LiteralMap;
@@ -127,7 +127,7 @@ impl Solver {
                         // whether we've reached the first UIP.
                         counter += 1;
                     } else {
-                        assert_eq!(self.assignment.literal_value(lit.negate()), VarValue::False);
+                        assert_eq!(self.assignment.literal_value(lit.negate()), Some(false));
                         output_clause.push(lit.negate());
                         // We keep track of the decision level we need to
                         // backtrack to in order to make the UIP literal
@@ -161,7 +161,7 @@ impl Solver {
                 // Put the asserting literal at the end, and then swap it so it
                 // ends up in position 0 (the unit propagation position)
                 let asserting_idx = output_clause.len();
-                assert_eq!(self.assignment.literal_value(lit.negate()), VarValue::False);
+                assert_eq!(self.assignment.literal_value(lit.negate()), Some(false));
                 output_clause.push(lit.negate());
                 output_clause.swap(0, asserting_idx);
                 break;
@@ -210,7 +210,7 @@ impl Solver {
     // TODO: Maybe do not use boolean for error reporting
     fn assert_literal(&mut self, lit: Literal, reason: Option<ClauseIndex>) -> bool {
         match self.assignment.literal_value(lit) {
-            VarValue::Unassigned => {
+            None => {
                 match lit.assignment() {
                     (var, value) => {
                         debug!(
@@ -239,9 +239,9 @@ impl Solver {
                 }
             }
             // Conflicting assignment
-            VarValue::False => false,
+            Some(false) => false,
             // Already set
-            VarValue::True => true,
+            Some(true) => true,
         }
     }
 
@@ -347,7 +347,7 @@ impl Solver {
             let mut satisfied = false;
 
             for &lit in &c.literals {
-                if self.assignment.literal_value(lit) == VarValue::True {
+                if self.assignment.literal_value(lit) == Some(true) {
                     satisfied = true;
                     break;
                 }
