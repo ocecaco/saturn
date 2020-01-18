@@ -1,5 +1,6 @@
 mod assignment;
 mod clausedb;
+mod congruence_closure;
 mod solver;
 mod types;
 mod util;
