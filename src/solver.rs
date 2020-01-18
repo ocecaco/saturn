@@ -1,11 +1,9 @@
 use log::debug;
 use std::cmp;
-use std::collections::HashSet;
 use std::mem;
 
 use crate::assignment::{Assignment, VarInfo, VarValue};
 use crate::clausedb::{ClauseDatabase, ClauseIndex, ClauseType};
-use crate::types::Sign;
 use crate::types::{Clause, Literal, Model, Var};
 use crate::util::LiteralMap;
 
@@ -31,53 +29,53 @@ impl Solver {
         }
     }
 
-    fn check_watches(&self) {
-        let mut watches_expected = LiteralMap::new();
-        for _ in 0..self.assignment.num_vars() {
-            watches_expected.push(Vec::new(), Vec::new());
-        }
+    // fn check_watches(&self) {
+    //     let mut watches_expected = LiteralMap::new();
+    //     for _ in 0..self.assignment.num_vars() {
+    //         watches_expected.push(Vec::new(), Vec::new());
+    //     }
 
-        // Get the expected watch lists
-        self.clause_database.expected_watches(&mut watches_expected);
+    //     // Get the expected watch lists
+    //     self.clause_database.expected_watches(&mut watches_expected);
 
-        // Compare to see if there is a difference, ignoring ordering of clauses in the watch lists
-        for i in 0..self.assignment.num_vars() {
-            for &sign in &[Sign::Positive, Sign::Negative] {
-                let lit = Literal { sign, var: Var(i) };
+    //     // Compare to see if there is a difference, ignoring ordering of clauses in the watch lists
+    //     for i in 0..self.assignment.num_vars() {
+    //         for &sign in &[Sign::Positive, Sign::Negative] {
+    //             let lit = Literal { sign, var: Var(i) };
 
-                let actual = &self.watches[lit];
-                let expected = &watches_expected[lit];
+    //             let actual = &self.watches[lit];
+    //             let expected = &watches_expected[lit];
 
-                let actual: HashSet<_> = actual.iter().copied().collect();
-                let expected: HashSet<_> = expected.iter().copied().collect();
+    //             let actual: HashSet<_> = actual.iter().copied().collect();
+    //             let expected: HashSet<_> = expected.iter().copied().collect();
 
-                let diff: Vec<_> = actual.symmetric_difference(&expected).copied().collect();
+    //             let diff: Vec<_> = actual.symmetric_difference(&expected).copied().collect();
 
-                if diff.len() > 0 {
-                    panic!("Watch list invariant violation for literal {}: Expected {:?}, Found {:?}, Diff {:?}",
-                           lit, expected, actual, diff);
-                }
-            }
-        }
+    //             if diff.len() > 0 {
+    //                 panic!("Watch list invariant violation for literal {}: Expected {:?}, Found {:?}, Diff {:?}",
+    //                        lit, expected, actual, diff);
+    //             }
+    //         }
+    //     }
 
-        debug!("Successfully checked watches");
-    }
+    //     debug!("Successfully checked watches");
+    // }
 
-    fn check_implied(&self) {
-        for c in &self.clause_database.clauses {
-            if c.is_implied(&self.assignment) {
-                panic!("Found implied clause in user clauses");
-            }
-        }
+    // fn check_implied(&self) {
+    //     for c in &self.clause_database.clauses {
+    //         if c.is_implied(&self.assignment) {
+    //             panic!("Found implied clause in user clauses");
+    //         }
+    //     }
 
-        for c in &self.clause_database.clauses {
-            if c.is_implied(&self.assignment) {
-                panic!("Found implied clause in learned clauses");
-            }
-        }
+    //     for c in &self.clause_database.clauses {
+    //         if c.is_implied(&self.assignment) {
+    //             panic!("Found implied clause in learned clauses");
+    //         }
+    //     }
 
-        debug!("Successfully checked for implied clauses");
-    }
+    //     debug!("Successfully checked for implied clauses");
+    // }
 
     fn num_assigns(&self) -> usize {
         self.trail.len()
@@ -108,6 +106,7 @@ impl Solver {
             let reason = self
                 .clause_database
                 .get_clause(clause)
+                .expect("clauses which are part of the conflict graph should be present")
                 .calc_reason(conflicting);
 
             for lit in reason {
@@ -211,31 +210,34 @@ impl Solver {
     // TODO: Maybe do not use boolean for error reporting
     fn assert_literal(&mut self, lit: Literal, reason: Option<ClauseIndex>) -> bool {
         match self.assignment.literal_value(lit) {
-            VarValue::Unassigned => match lit.assignment() {
-                (var, value) => {
-                    debug!(
-                        "Assignment: {} -> {} at level {} ({})",
-                        var,
-                        value,
-                        self.decision_level(),
-                        if let Some(idx) = reason {
-                            format!("implied by {}", self.clause_database.get_clause(idx))
-                        } else {
-                            "decision".to_owned()
-                        }
-                    );
-                    self.assignment.assign(
-                        var,
-                        VarInfo::Assigned {
+            VarValue::Unassigned => {
+                match lit.assignment() {
+                    (var, value) => {
+                        debug!(
+                            "Assignment: {} -> {} at level {} ({})",
+                            var,
                             value,
-                            reason,
-                            level: self.decision_level(),
-                        },
-                    );
-                    self.trail.push(lit);
-                    true
+                            self.decision_level(),
+                            if let Some(idx) = reason {
+                                let reason_clause = self.clause_database.get_clause(idx).expect("clauses which are part of the conflict graph should be present");
+                                format!("implied by {}", reason_clause)
+                            } else {
+                                "decision".to_owned()
+                            }
+                        );
+                        self.assignment.assign(
+                            var,
+                            VarInfo::Assigned {
+                                value,
+                                reason,
+                                level: self.decision_level(),
+                            },
+                        );
+                        self.trail.push(lit);
+                        true
+                    }
                 }
-            },
+            }
             // Conflicting assignment
             VarValue::False => false,
             // Already set
@@ -257,28 +259,39 @@ impl Solver {
             for i in 0..watches.len() {
                 let c_idx = watches[i];
 
-                let (new_watch, maybe_prop) = self
-                    .clause_database
-                    .get_clause_mut(c_idx)
-                    .watch_triggered(lit, &self.assignment);
+                let maybe_clause = self.clause_database.get_clause_mut(c_idx);
 
-                // Re-add this clause to the given watch list, since we removed
-                // it from one.
-                self.watches[new_watch].push(c_idx);
+                // Simply skip (learned) clauses which have been removed. This
+                // effectively corresponds to lazy removal of learned clauses
+                // from the watch lists, instead of immediately removing a
+                // learned clause from the watch lists when it is removed.
+                let maybe_result = match maybe_clause {
+                    Some(clause) => Some(clause.watch_triggered(lit, &self.assignment)),
+                    None => None,
+                };
 
-                // Perform unit propagation if necessary
-                if let Some(prop) = maybe_prop {
-                    if !self.assert_literal(prop, Some(c_idx)) {
-                        // Copy back the remaining watches, so we ensure that no
-                        // watch pointers are lost, even when backtracking/conflict
-                        // occurs.
-                        self.watches[lit].extend_from_slice(&watches[i + 1..]);
+                if let Some((new_watch, maybe_prop)) = maybe_result {
+                    // Re-add this clause to the given watch list, since we removed
+                    // it from one.
+                    self.watches[new_watch].push(c_idx);
 
-                        // Clear the queue
-                        self.queue_head = self.trail.len();
-                        debug!("Conflict! {}", self.clause_database.get_clause(c_idx));
+                    // Perform unit propagation if necessary
+                    if let Some(prop) = maybe_prop {
+                        if !self.assert_literal(prop, Some(c_idx)) {
+                            // Copy back the remaining watches, so we ensure that no
+                            // watch pointers are lost, even when backtracking/conflict
+                            // occurs.
+                            self.watches[lit].extend_from_slice(&watches[i + 1..]);
 
-                        return Some(c_idx);
+                            // Clear the queue
+                            self.queue_head = self.trail.len();
+                            debug!(
+                                "Conflict! {}",
+                                self.clause_database.get_clause_mut(c_idx).unwrap()
+                            );
+
+                            return Some(c_idx);
+                        }
                     }
                 }
             }
@@ -349,9 +362,9 @@ impl Solver {
     fn search(&mut self) -> Option<Model> {
         loop {
             let maybe_conflict = self.propagate();
-            if cfg!(debug_assertions) {
-                self.check_watches();
-            }
+            // if cfg!(debug_assertions) {
+            //     self.check_watches();
+            // }
             if let Some(conflict) = maybe_conflict {
                 // Conflict at root level means the formula is unsatisfiable
                 if self.decision_level() == 0 {
@@ -370,15 +383,15 @@ impl Solver {
 
                 self.cancel_until(backtrack_level);
 
-                if cfg!(debug_assertions) {
-                    self.check_implied();
-                }
+                // if cfg!(debug_assertions) {
+                //     self.check_implied();
+                // }
 
                 self.record(learned_clause);
             } else {
-                if cfg!(debug_assertions) {
-                    self.check_implied();
-                }
+                // if cfg!(debug_assertions) {
+                //     self.check_implied();
+                // }
 
                 // If all variables are assigned, then we have a satisfying
                 // assignment.

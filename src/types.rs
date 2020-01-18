@@ -147,20 +147,20 @@ impl Clause {
         (lit, Some(self.literals[0]))
     }
 
-    pub(crate) fn is_implied(&self, assignment: &Assignment) -> bool {
-        let mut num_false = 0;
-        let mut num_unassigned = 0;
+    // pub(crate) fn is_implied(&self, assignment: &Assignment) -> bool {
+    //     let mut num_false = 0;
+    //     let mut num_unassigned = 0;
 
-        for &lit in &self.literals {
-            match assignment.literal_value(lit) {
-                VarValue::Unassigned => num_unassigned += 1,
-                VarValue::False => num_false += 1,
-                VarValue::True => {}
-            }
-        }
+    //     for &lit in &self.literals {
+    //         match assignment.literal_value(lit) {
+    //             VarValue::Unassigned => num_unassigned += 1,
+    //             VarValue::False => num_false += 1,
+    //             VarValue::True => {}
+    //         }
+    //     }
 
-        (num_unassigned == 1) && (num_false == self.literals.len() - 1)
-    }
+    //     (num_unassigned == 1) && (num_false == self.literals.len() - 1)
+    // }
 
     pub(crate) fn check_valid_learned(
         &self,
