@@ -3,6 +3,9 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::mem;
 
+// This implementation is based on "Congruence Closure with Integer Offsets" by
+// Robert Nieuwenhuis and Albert Oliveras.
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 struct Const(usize);
 
@@ -106,9 +109,17 @@ impl EqualitySolver {
 
     fn congruence_closure(&mut self) {
         while let Some((a, b)) = self.const_equations.pop() {
-            let a = self.const_supply.representatives[a.0];
-            let b = self.const_supply.representatives[b.0];
-            // TODO: Order by class size
+            let mut a = self.const_supply.representatives[a.0];
+            let mut b = self.const_supply.representatives[b.0];
+
+            let num_members_a = self.const_supply.members[a.0].len();
+            let num_members_b = self.const_supply.members[b.0].len();
+            if num_members_a > num_members_b {
+                mem::swap(&mut a, &mut b);
+            }
+
+            let a = a;
+            let b = b;
 
             if a != b {
                 // Move all of the members from the class of a to the class of b
