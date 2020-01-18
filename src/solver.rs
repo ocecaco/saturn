@@ -299,7 +299,7 @@ impl Solver {
     }
 
     pub fn add_clause(&mut self, clause: Clause) {
-        self.add_clause_internal(clause, ClauseType::User);
+        self.add_clause_internal(clause, ClauseType::Problem);
     }
 
     fn add_clause_internal(

@@ -3,7 +3,7 @@ use crate::util::LiteralMap;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum ClauseType {
-    User,
+    Problem,
     Learned,
 }
 
@@ -28,21 +28,21 @@ impl ClauseDatabase {
 
     pub fn get_clause(&self, idx: ClauseIndex) -> &Clause {
         match idx.ty {
-            ClauseType::User => &self.clauses[idx.offset],
+            ClauseType::Problem => &self.clauses[idx.offset],
             ClauseType::Learned => &self.learned[idx.offset],
         }
     }
 
     pub fn get_clause_mut(&mut self, idx: ClauseIndex) -> &mut Clause {
         match idx.ty {
-            ClauseType::User => &mut self.clauses[idx.offset],
+            ClauseType::Problem => &mut self.clauses[idx.offset],
             ClauseType::Learned => &mut self.learned[idx.offset],
         }
     }
 
     pub fn add_clause(&mut self, clause: Clause, clause_type: ClauseType) -> ClauseIndex {
         let db = match clause_type {
-            ClauseType::User => &mut self.clauses,
+            ClauseType::Problem => &mut self.clauses,
             ClauseType::Learned => &mut self.learned,
         };
 
@@ -57,7 +57,7 @@ impl ClauseDatabase {
     pub(crate) fn expected_watches(&self, watches: &mut LiteralMap<Vec<ClauseIndex>>) {
         for (i, c) in self.clauses.iter().enumerate() {
             let idx = ClauseIndex {
-                ty: ClauseType::User,
+                ty: ClauseType::Problem,
                 offset: i,
             };
 
