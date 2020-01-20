@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use std::fmt;
 
 use crate::assignment::{Assignment, VarInfo};
+use crate::clausedb::ClauseIndex;
 use crate::util::VarMap;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -116,6 +117,10 @@ impl Clause {
         // (and thus for this clause being implied) is
         // that their negations were True
         reason.iter().copied().map(|lit| lit.negate())
+    }
+
+    pub fn is_locked(&self, idx: ClauseIndex, assignment: &Assignment) -> bool {
+        assignment.var_reason(self.literals[0].var) == Some(idx)
     }
 
     pub fn watch_triggered(

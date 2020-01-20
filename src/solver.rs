@@ -409,6 +409,10 @@ impl Solver {
 
                 self.record(learned_clause);
             } else {
+                if self.clause_database.learned.len() > 1000 {
+                    self.clause_database.reduce_db(&self.assignment);
+                }
+
                 // if cfg!(debug_assertions) {
                 //     self.check_implied();
                 // }
