@@ -8,6 +8,7 @@ mod congruence_closure;
 mod solver;
 mod types;
 mod util;
+mod varorder;
 
 type Error = Box<dyn std::error::Error>;
 type Result<T> = std::result::Result<T, Error>;

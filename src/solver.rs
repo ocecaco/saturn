@@ -6,11 +6,13 @@ use crate::assignment::{Assignment, VarInfo};
 use crate::clausedb::{ClauseDatabase, ClauseIndex, ClauseType};
 use crate::types::{Clause, Literal, Model, Var};
 use crate::util::LiteralMap;
+use crate::varorder::VarOrder;
 
 pub struct Solver {
     clause_database: ClauseDatabase,
     watches: LiteralMap<Vec<ClauseIndex>>,
     assignment: Assignment,
+    varorder: VarOrder,
     trail: Vec<Literal>,
     trail_lim: Vec<usize>,
     // Position of propagation queue in trail. Based on MiniSAT implementation.
@@ -23,6 +25,7 @@ impl Solver {
             clause_database: ClauseDatabase::new(0.95, 0.999),
             watches: LiteralMap::new(),
             assignment: Assignment::new(),
+            varorder: VarOrder::new(0.95, 0.999),
             trail: Vec::new(),
             trail_lim: Vec::new(),
             queue_head: 0,
@@ -82,6 +85,11 @@ impl Solver {
     }
 
     fn record(&mut self, clause: Clause) {
+        // Bump variables from conflict clause
+        for lit in &clause.literals {
+            self.varorder.bump_activity(lit.var);
+        }
+
         // Perform unit propagation on the asserting literal
         let asserting_lit = clause.literals[0];
         let clause_idx = self.add_clause_internal(clause, ClauseType::Learned);
@@ -329,6 +337,7 @@ impl Solver {
         let idx = self.assignment.num_vars();
 
         self.assignment.new_var();
+        self.varorder.new_var();
         self.watches.push(Vec::new(), Vec::new());
 
         Var(idx)
@@ -413,6 +422,7 @@ impl Solver {
                 self.record(learned_clause);
 
                 self.clause_database.decay_activities();
+                self.varorder.decay_activities();
             } else {
                 if self.clause_database.learned.len() > 1000 {
                     self.clause_database.reduce_db(&self.assignment);
@@ -440,17 +450,7 @@ impl Solver {
                     return model;
                 } else {
                     // Pick a new variable to assign
-
-                    // For now, simply pick the first unassigned variable. TODO:
-                    // Use a more optimized strategy.
-                    let mut vars = self.assignment.values.iter().enumerate();
-                    let var = loop {
-                        let (i, info) = vars.next().unwrap();
-                        if let VarInfo::Unassigned = info {
-                            break Var(i);
-                        }
-                    };
-
+                    let var = self.varorder.pick_next(&self.assignment);
                     self.assume(var.into());
                 }
             }
