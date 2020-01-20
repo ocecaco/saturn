@@ -20,7 +20,7 @@ pub struct Solver {
 impl Solver {
     pub fn new() -> Solver {
         Solver {
-            clause_database: ClauseDatabase::new(),
+            clause_database: ClauseDatabase::new(0.95, 0.999),
             watches: LiteralMap::new(),
             assignment: Assignment::new(),
             trail: Vec::new(),
@@ -92,7 +92,7 @@ impl Solver {
         }
     }
 
-    fn analyze(&self, mut clause: ClauseIndex) -> (Clause, usize) {
+    fn analyze(&mut self, mut clause: ClauseIndex) -> (Clause, usize) {
         let mut seen = vec![false; self.assignment.num_vars()];
         let mut output_clause = Vec::new();
         let mut backtrack_level = 0;
@@ -103,6 +103,9 @@ impl Solver {
         let mut trail_rev = self.trail.iter().rev();
 
         loop {
+            // Clauses which are involved in a conflict receive an activity bump
+            self.clause_database.bump_clause(clause);
+
             let reason = self
                 .clause_database
                 .get_clause(clause)
@@ -408,6 +411,8 @@ impl Solver {
                 // }
 
                 self.record(learned_clause);
+
+                self.clause_database.decay_activities();
             } else {
                 if self.clause_database.learned.len() > 1000 {
                     self.clause_database.reduce_db(&self.assignment);

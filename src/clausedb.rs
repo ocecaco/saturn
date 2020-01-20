@@ -23,13 +23,17 @@ pub struct LearnedClause {
 pub(crate) struct ClauseDatabase {
     pub(crate) clauses: Vec<Clause>,
     pub(crate) learned: Arena<LearnedClause>,
+    act_inc: f64,
+    act_decay: f64,
 }
 
 impl ClauseDatabase {
-    pub fn new() -> ClauseDatabase {
+    pub fn new(act_inc: f64, act_decay: f64) -> ClauseDatabase {
         ClauseDatabase {
             clauses: Vec::new(),
             learned: Arena::new(),
+            act_inc,
+            act_decay,
         }
     }
 
@@ -63,6 +67,33 @@ impl ClauseDatabase {
                 activity: 0.0,
                 clause,
             })),
+        }
+    }
+
+    pub fn decay_activities(&mut self) {
+        self.act_inc /= self.act_decay;
+    }
+
+    fn rescale_activities(&mut self) {
+        for (_, learned_clause) in &mut self.learned {
+            learned_clause.activity /= 1e100;
+        }
+    }
+
+    pub fn bump_clause(&mut self, idx: ClauseIndex) {
+        let new_act = match idx {
+            ClauseIndex::Problem(_) => 0.0,
+            ClauseIndex::Learned(idx) => {
+                let learned_clause = &mut self.learned[idx];
+
+                learned_clause.activity += self.act_inc;
+
+                learned_clause.activity
+            }
+        };
+
+        if new_act > 1e100 {
+            self.rescale_activities();
         }
     }
 
