@@ -76,8 +76,9 @@ impl ClauseDatabase {
 
     fn rescale_activities(&mut self) {
         for (_, learned_clause) in &mut self.learned {
-            learned_clause.activity /= 1e100;
+            learned_clause.activity *= 1e-100;
         }
+        self.act_inc *= 1e-100;
     }
 
     pub fn bump_clause(&mut self, idx: ClauseIndex) {
