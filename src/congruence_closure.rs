@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::mem;
@@ -7,12 +6,18 @@ use std::mem;
 // Robert Nieuwenhuis and Albert Oliveras.
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-struct Const(usize);
+pub struct Const(usize);
 
 #[derive(Debug, Clone)]
-struct Term {
+pub struct Term {
     function: Const,
     args: Vec<Term>,
+}
+
+impl Term {
+    pub fn new(function: Const, args: Vec<Term>) -> Self {
+        Term { function, args }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -57,14 +62,14 @@ impl ConstSupply {
 type AppEq = ((Const, Const), Const);
 type ConstEq = (Const, Const);
 
-struct EqualitySolver {
+pub struct EqualitySolver {
     const_supply: ConstSupply,
     app_equations: HashMap<(Const, Const), Const>,
     const_equations: Vec<(Const, Const)>,
 }
 
 impl EqualitySolver {
-    fn new() -> Self {
+    pub fn new() -> Self {
         EqualitySolver {
             const_supply: ConstSupply {
                 representatives: Vec::new(),
@@ -76,7 +81,11 @@ impl EqualitySolver {
         }
     }
 
-    fn add_equation(&mut self, t1: &Term, t2: &Term) {
+    pub fn new_const(&mut self) -> Const {
+        self.const_supply.fresh()
+    }
+
+    pub fn add_equation(&mut self, t1: &Term, t2: &Term) {
         let c1 = self.flatten(&currify(t1));
         let c2 = self.flatten(&currify(t2));
         self.const_equations.push((c1, c2));
@@ -107,21 +116,23 @@ impl EqualitySolver {
         }
     }
 
-    fn congruence_closure(&mut self) {
+    pub fn congruence_closure(&mut self) {
         while let Some((a, b)) = self.const_equations.pop() {
             let mut a = self.const_supply.representatives[a.0];
             let mut b = self.const_supply.representatives[b.0];
 
-            let num_members_a = self.const_supply.members[a.0].len();
-            let num_members_b = self.const_supply.members[b.0].len();
-            if num_members_a > num_members_b {
-                mem::swap(&mut a, &mut b);
-            }
-
-            let a = a;
-            let b = b;
-
             if a != b {
+                // Order classes by size to minimize number of constants that
+                // need to be "re-parented". This is a standard union-find
+                // technique.
+                let num_members_a = self.const_supply.members[a.0].len();
+                let num_members_b = self.const_supply.members[b.0].len();
+                if num_members_a > num_members_b {
+                    mem::swap(&mut a, &mut b);
+                }
+                let a = a;
+                let b = b;
+
                 // Move all of the members from the class of a to the class of b
                 let a_members = mem::replace(&mut self.const_supply.members[a.0], Vec::new());
                 for c in a_members {

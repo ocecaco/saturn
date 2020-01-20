@@ -1,3 +1,7 @@
+// TODO: Remove this eventually
+#![allow(dead_code)]
+#![allow(unused_imports)]
+
 mod assignment;
 mod clausedb;
 mod congruence_closure;
@@ -8,6 +12,7 @@ mod util;
 type Error = Box<dyn std::error::Error>;
 type Result<T> = std::result::Result<T, Error>;
 
+use crate::congruence_closure::{Const, EqualitySolver, Term};
 use log::debug;
 use solver::Solver;
 use std::convert::TryInto;
@@ -70,6 +75,18 @@ fn load_dimacs(solver: &mut Solver, filename: &str) -> Result<()> {
     debug!("Finished adding clauses");
 
     Ok(())
+}
+
+fn con(c: Const) -> Term {
+    Term::new(c, vec![])
+}
+
+fn a1(f: Const, t: Term) -> Term {
+    Term::new(f, vec![t])
+}
+
+fn a2(f: Const, t1: Term, t2: Term) -> Term {
+    Term::new(f, vec![t1, t2])
 }
 
 fn main() -> Result<()> {
