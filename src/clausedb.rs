@@ -64,7 +64,7 @@ impl ClauseDatabase {
                 ClauseIndex::Problem(idx)
             }
             ClauseType::Learned => ClauseIndex::Learned(self.learned.insert(LearnedClause {
-                activity: 0.0,
+                activity: self.act_inc, // Newly learned clauses are considered active
                 clause,
             })),
         }
