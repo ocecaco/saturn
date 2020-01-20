@@ -171,6 +171,26 @@ impl Solver {
             conflicting = false;
         }
 
+        // Find literal with highest decision level for second watch, this is to
+        // ensure that backtracking behaves properly.
+        let second_watch = output_clause
+            .iter()
+            .enumerate()
+            .skip(1) // Skip the first, since that's the asserting literal which is already watched
+            .map(|(i, lit)| {
+                (
+                    i,
+                    self.assignment
+                        .var_level(lit.var)
+                        .expect("conflict clause literals must be assigned"),
+                )
+            })
+            .max_by_key(|item| item.1);
+
+        if let Some((i, _level)) = second_watch {
+            output_clause.swap(1, i);
+        }
+
         (Clause::new_unchecked(output_clause), backtrack_level)
     }
 
