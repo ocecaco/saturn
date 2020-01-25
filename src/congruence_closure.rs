@@ -42,6 +42,7 @@ struct ConstSupply {
     representatives: ConstMap<Const>,
     members: ConstMap<Vec<Const>>,
     uses: ConstMap<Vec<AppEq>>,
+    proof_parents: ConstMap<Option<(Const, PendingEq)>>,
 }
 
 impl ConstSupply {
@@ -51,6 +52,7 @@ impl ConstSupply {
         self.representatives.push(new_const);
         self.members.push(vec![new_const]);
         self.uses.push(Vec::new());
+        self.proof_parents.push(None);
         new_const
     }
 
@@ -59,13 +61,40 @@ impl ConstSupply {
     }
 }
 
-type AppEq = ((Const, Const), Const);
-type ConstEq = (Const, Const);
+#[derive(Debug, Copy, Clone)]
+pub struct ConstEq(Const, Const);
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct App(Const, Const);
+
+#[derive(Debug, Copy, Clone)]
+pub struct AppEq(App, Const);
+
+#[derive(Debug, Copy, Clone)]
+pub enum Equation {
+    Constants(ConstEq),
+    Application(AppEq),
+}
+
+#[derive(Debug, Copy, Clone)]
+enum PendingEq {
+    Constants(ConstEq),
+    Application(AppEq, AppEq),
+}
+
+impl PendingEq {
+    fn constants(&self) -> (Const, Const) {
+        match self {
+            PendingEq::Constants(ConstEq(a, b)) => (*a, *b),
+            PendingEq::Application(AppEq(_, a), AppEq(_, b)) => (*a, *b),
+        }
+    }
+}
 
 pub struct EqualitySolver {
     const_supply: ConstSupply,
-    app_equations: HashMap<(Const, Const), Const>,
-    const_equations: Vec<(Const, Const)>,
+    lookup: HashMap<App, AppEq>,
+    pending: Vec<PendingEq>,
 }
 
 impl EqualitySolver {
@@ -75,9 +104,10 @@ impl EqualitySolver {
                 representatives: Vec::new(),
                 members: Vec::new(),
                 uses: Vec::new(),
+                proof_parents: Vec::new(),
             },
-            app_equations: HashMap::new(),
-            const_equations: Vec::new(),
+            lookup: HashMap::new(),
+            pending: Vec::new(),
         }
     }
 
@@ -85,78 +115,104 @@ impl EqualitySolver {
         self.const_supply.fresh()
     }
 
-    pub fn add_equation(&mut self, t1: &Term, t2: &Term) {
-        let c1 = self.flatten(&currify(t1));
-        let c2 = self.flatten(&currify(t2));
-        self.const_equations.push((c1, c2));
+    fn representative(&self, c: Const) -> Const {
+        self.const_supply.representatives[c.0]
     }
 
-    fn flatten(&mut self, curried: &Curried) -> Const {
-        match curried {
-            Curried::Const(c) => *c,
-            Curried::Apply(t1, t2) => {
-                let c1 = self.flatten(t1);
-                let c2 = self.flatten(t2);
-                self.flatten_app(c1, c2)
+    fn reparent(&mut self, c: Const, repr: Const) {
+        self.const_supply.representatives[c.0] = repr;
+        self.const_supply.members[repr.0].push(c);
+    }
+
+    fn class_size(&self, c: Const) -> usize {
+        let c = self.representative(c);
+        self.const_supply.members[c.0].len()
+    }
+
+    fn lookup(&self, app: App) -> Option<AppEq> {
+        let App(a1, a2) = app;
+        let a1 = self.representative(a1);
+        let a2 = self.representative(a2);
+        self.lookup.get(&App(a1, a2)).copied()
+    }
+
+    fn lookup_set(&mut self, app: App, eq: AppEq) {
+        let App(a1, a2) = app;
+        let a1 = self.representative(a1);
+        let a2 = self.representative(a2);
+        self.lookup.insert(App(a1, a2), eq);
+    }
+
+    fn add_to_uses(&mut self, eq: AppEq) {
+        let AppEq(App(a1, a2), _) = eq;
+        let a1 = self.representative(a1);
+        let a2 = self.representative(a2);
+        self.const_supply.uses[a1.0].push(eq);
+        self.const_supply.uses[a2.0].push(eq);
+    }
+
+    pub fn merge(&mut self, eq: Equation) {
+        match eq {
+            Equation::Constants(eq) => {
+                self.pending.push(PendingEq::Constants(eq));
+                self.propagate();
             }
-        }
-    }
-
-    fn flatten_app(&mut self, c1: Const, c2: Const) -> Const {
-        match self.app_equations.entry((c1, c2)) {
-            Entry::Occupied(e) => *e.get(),
-            Entry::Vacant(e) => {
-                let c = self.const_supply.fresh();
-                let app_eq = ((c1, c2), c);
-                self.const_supply.uses[c1.0].push(app_eq);
-                self.const_supply.uses[c2.0].push(app_eq);
-                e.insert(c);
-                c
-            }
-        }
-    }
-
-    pub fn congruence_closure(&mut self) {
-        while let Some((a, b)) = self.const_equations.pop() {
-            let a = self.const_supply.representatives[a.0];
-            let b = self.const_supply.representatives[b.0];
-
-            if a != b {
-                // Order classes by size to minimize number of constants that
-                // need to be "re-parented". This is a standard union-find
-                // technique.
-                let num_members_a = self.const_supply.members[a.0].len();
-                let num_members_b = self.const_supply.members[b.0].len();
-                let (a, b) = if num_members_a > num_members_b {
-                    (b, a)
+            Equation::Application(eq) => {
+                let AppEq(app, _) = eq;
+                if let Some(oldeq) = self.lookup(app) {
+                    self.pending.push(PendingEq::Application(eq, oldeq));
+                    self.propagate();
                 } else {
-                    (a, b)
-                };
-
-                // Move all of the members from the class of a to the class of b
-                let a_members = mem::replace(&mut self.const_supply.members[a.0], Vec::new());
-                for c in a_members {
-                    self.const_supply.representatives[c.0] = b;
-                    self.const_supply.members[b.0].push(c);
+                    self.lookup_set(app, eq);
+                    self.add_to_uses(eq);
                 }
+            }
+        }
+    }
 
-                let a_uses = mem::replace(&mut self.const_supply.uses[a.0], Vec::new());
-                for orig_eq in a_uses {
-                    let ((c, d), e) = orig_eq;
-                    let c = self.const_supply.representatives[c.0];
-                    let d = self.const_supply.representatives[d.0];
-                    let e = self.const_supply.representatives[e.0];
+    fn add_proof_edge(&mut self, reason: PendingEq) {}
 
-                    if let Some(f) = self.app_equations.get(&(c, d)) {
-                        let f = self.const_supply.representatives[f.0];
+    pub fn propagate(&mut self) {
+        while let Some(eq) = self.pending.pop() {
+            let (a_orig, b_orig) = eq.constants();
 
-                        if f != e {
-                            self.const_equations.push((e, f));
-                        }
+            let a = self.representative(a_orig);
+            let b = self.representative(b_orig);
 
-                        self.app_equations.insert((c, d), e);
-                        self.const_supply.uses[b.0].push(orig_eq);
-                    }
+            // Do nothing if already equal
+            if a == b {
+                continue;
+            }
+
+            // Keep track of this union for generating
+            // explanations.
+            self.add_proof_edge(eq);
+
+            // Make sure that the size of a's equivalence class is less than or
+            // equal to b, which is necessary to guarantee good time complexity.
+            // This is common in union-find data structures.
+            let (a, b) = if self.class_size(a) > self.class_size(b) {
+                (b, a)
+            } else {
+                (a, b)
+            };
+
+            // Merge a into b's class
+            let members_a = mem::replace(&mut self.const_supply.members[a.0], Vec::new());
+            for &m in &members_a {
+                self.reparent(m, b);
+            }
+
+            // Generate new equations according to the lookup table, which are
+            // caused by congruences.
+            let uses_a = mem::replace(&mut self.const_supply.uses[a.0], Vec::new());
+            for &eq in &uses_a {
+                let AppEq(app, _) = eq;
+                if let Some(lookupeq) = self.lookup(app) {
+                    self.pending.push(PendingEq::Application(eq, lookupeq));
+                } else {
+                    self.lookup_set(app, eq);
+                    self.const_supply.uses[b.0].push(eq);
                 }
             }
         }
