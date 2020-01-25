@@ -118,8 +118,8 @@ impl EqualitySolver {
 
     pub fn congruence_closure(&mut self) {
         while let Some((a, b)) = self.const_equations.pop() {
-            let mut a = self.const_supply.representatives[a.0];
-            let mut b = self.const_supply.representatives[b.0];
+            let a = self.const_supply.representatives[a.0];
+            let b = self.const_supply.representatives[b.0];
 
             if a != b {
                 // Order classes by size to minimize number of constants that
@@ -127,11 +127,11 @@ impl EqualitySolver {
                 // technique.
                 let num_members_a = self.const_supply.members[a.0].len();
                 let num_members_b = self.const_supply.members[b.0].len();
-                if num_members_a > num_members_b {
-                    mem::swap(&mut a, &mut b);
-                }
-                let a = a;
-                let b = b;
+                let (a, b) = if num_members_a > num_members_b {
+                    (b, a)
+                } else {
+                    (a, b)
+                };
 
                 // Move all of the members from the class of a to the class of b
                 let a_members = mem::replace(&mut self.const_supply.members[a.0], Vec::new());
