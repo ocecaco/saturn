@@ -224,7 +224,7 @@ impl EqualitySolver {
         }
     }
 
-    pub fn propagate(&mut self) {
+    fn propagate(&mut self) {
         while let Some(eq) = self.pending.pop() {
             let (a_orig, b_orig) = eq.constants();
 
@@ -242,6 +242,17 @@ impl EqualitySolver {
 
             self.union(a, b);
         }
+    }
+
+    pub fn are_congruent(&self, a: Const, b: Const) -> bool {
+        let a = self.representative(a);
+        let b = self.representative(b);
+        a == b
+    }
+
+    pub fn explain(&self, a: Const, b: Const) -> Vec<Equation> {
+        let explanation_generator = ExplanationGenerator::new(&self.const_supply.proof_parents);
+        explanation_generator.explain(a, b)
     }
 }
 
@@ -400,7 +411,9 @@ impl<'a> ExplanationGenerator<'a> {
     }
 
     fn union_with_parent(&mut self, child: Const) {
-        let (parent, _) = self.parent(child).unwrap();
+        let (parent, _) = self
+            .parent(child)
+            .expect("union_with_parent should only be called on nodes that have parents");
         let highest_of_parent = self.highest_node(parent);
 
         self.union_classes(child, parent, highest_of_parent);
