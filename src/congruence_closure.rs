@@ -63,13 +63,13 @@ impl ConstSupply {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct ConstEq(Const, Const);
+pub struct ConstEq(pub Const, pub Const);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct App(Const, Const);
+pub struct App(pub Const, pub Const);
 
 #[derive(Debug, Copy, Clone)]
-pub struct AppEq(App, Const);
+pub struct AppEq(pub App, pub Const);
 
 #[derive(Debug, Copy, Clone)]
 pub enum Equation {

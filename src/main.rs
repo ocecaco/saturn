@@ -13,7 +13,7 @@ mod varorder;
 type Error = Box<dyn std::error::Error>;
 type Result<T> = std::result::Result<T, Error>;
 
-use crate::congruence_closure::{Const, EqualitySolver, Term};
+use crate::congruence_closure::{App, AppEq, Const, ConstEq, EqualitySolver, Equation, Term};
 use log::debug;
 use solver::Solver;
 use std::convert::TryInto;
@@ -90,16 +90,41 @@ fn a2(f: Const, t1: Term, t2: Term) -> Term {
     Term::new(f, vec![t1, t2])
 }
 
+fn test_equality() {
+    let mut solver = EqualitySolver::new();
+    let c0 = solver.new_const();
+    let c1 = solver.new_const();
+    let c2 = solver.new_const();
+    let c3 = solver.new_const();
+    let c4 = solver.new_const();
+    let c5 = solver.new_const();
+    let c6 = solver.new_const();
+    let c7 = solver.new_const();
+    let f = solver.new_const();
+
+    solver.merge(Equation::Constants(ConstEq(c0, c1)));
+    solver.merge(Equation::Constants(ConstEq(c3, c4)));
+    solver.merge(Equation::Constants(ConstEq(c3, c5)));
+    solver.merge(Equation::Constants(ConstEq(c1, c2)));
+    solver.merge(Equation::Constants(ConstEq(c1, c3)));
+
+    solver.merge(Equation::Application(AppEq(App(f, c0), c6)));
+    solver.merge(Equation::Application(AppEq(App(f, c1), c7)));
+
+    println!("{:?}", solver.explain(c6, c7));
+}
+
 fn main() -> Result<()> {
     env_logger::init();
 
-    let args: Vec<_> = env::args().collect();
+    // let args: Vec<_> = env::args().collect();
 
-    let mut solver = Solver::new();
+    // let mut solver = Solver::new();
 
-    load_dimacs(&mut solver, &args[1])?;
+    // load_dimacs(&mut solver, &args[1])?;
 
-    println!("{:?}", solver.solve());
+    // println!("{:?}", solver.solve());
+    test_equality();
 
     Ok(())
 }
