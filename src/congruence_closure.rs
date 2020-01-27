@@ -259,6 +259,8 @@ pub struct ExplanationGenerator<'a> {
     representatives: ConstMap<Const>,
     // For each representative, the list of its members
     members: ConstMap<Vec<Const>>,
+    explanation: Vec<Equation>,
+    pending: Vec<(Const, Const)>,
 }
 
 impl<'a> ExplanationGenerator<'a> {
@@ -282,6 +284,49 @@ impl<'a> ExplanationGenerator<'a> {
             highest_node,
             representatives,
             members,
+            explanation: Vec::new(),
+            pending: Vec::new(),
+        }
+    }
+
+    fn explain(mut self, c1: Const, c2: Const) -> Vec<Equation> {
+        self.pending.push((c1, c2));
+
+        while let Some((a, b)) = self.pending.pop() {
+            let c = self
+                .nearest_common_ancestor(a, b)
+                .expect("Nodes in explanation graph should be connected by some path");
+            self.explain_along_path(a, c);
+            self.explain_along_path(b, c);
+        }
+
+        self.explanation
+    }
+
+    fn explain_along_path(&mut self, a: Const, c: Const) {
+        let mut a = self.highest_node(a);
+
+        while a != c {
+            let (parent, reason) = self.parent(a).expect("we should always find c before running out of parents, since c is an ancestor of a");
+
+            match reason {
+                PendingEq::Constants(eq) => self.explanation.push(Equation::Constants(eq)),
+                PendingEq::Application(eq1, eq2) => {
+                    self.explanation.push(Equation::Application(eq1));
+                    self.explanation.push(Equation::Application(eq2));
+
+                    // "Recursively" explain why the arguments to this
+                    // application were equal, which is what caused the outputs
+                    // of the applications to be unified.
+                    let AppEq(App(a1, a2), _) = eq1;
+                    let AppEq(App(b1, b2), _) = eq2;
+                    self.pending.push((a1, b1));
+                    self.pending.push((a2, b2));
+                }
+            }
+
+            self.union_with_parent(a);
+            a = self.highest_node(parent);
         }
     }
 
