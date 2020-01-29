@@ -357,6 +357,20 @@ impl EqualitySolver {
             explanation
         }
     }
+
+    pub fn explain_conflict(&self, a: Const, b: Const) -> Vec<Equation> {
+        let ConstEq(c1, c2) =
+            self.disequality_reason_get(self.representative(a), self.representative(b));
+
+        let mut explanation_generator = ExplanationGenerator::new(&self.const_supply.proof_parents);
+
+        explanation_generator.explain(a, b);
+        explanation_generator.explain(a, c1);
+        explanation_generator.explain(b, c2);
+        let mut explanation = explanation_generator.done();
+        explanation.push(Equation::Constants(false, ConstEq(c1, c2)));
+        explanation
+    }
 }
 
 pub struct ExplanationGenerator<'a> {

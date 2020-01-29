@@ -118,7 +118,7 @@ fn test_equality() {
 
     println!(
         "{:?}",
-        solver.merge(Equation::Constants(true, ConstEq(b, d))),
+        solver.merge(Equation::Constants(true, ConstEq(d, b))),
     );
 
     println!(
@@ -137,7 +137,7 @@ fn test_equality() {
         "{:?}",
         solver.merge(Equation::Constants(true, ConstEq(z, w))),
     );
-    println!("{:?}", solver.explain(false, c, d));
+    println!("{:?}", solver.explain_conflict(b, c));
 }
 
 fn main() -> Result<()> {
