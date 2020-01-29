@@ -44,6 +44,10 @@ struct ConstSupply {
     members: ConstMap<Vec<Const>>,
     uses: ConstMap<Vec<AppEq>>,
     proof_parents: ProofForest,
+    // For each representative, the set of other representatives that it is
+    // known to be disequal to
+    disequalities: ConstMap<HashSet<Const>>,
+    disequalities_reason: HashMap<(Const, Const), (Const, Const)>,
 }
 
 impl ConstSupply {
@@ -54,6 +58,7 @@ impl ConstSupply {
         self.members.push(vec![new_const]);
         self.uses.push(Vec::new());
         self.proof_parents.push(None);
+        self.disequalities.push(HashSet::new());
         new_const
     }
 
@@ -73,7 +78,7 @@ pub struct AppEq(pub App, pub Const);
 
 #[derive(Debug, Copy, Clone)]
 pub enum Equation {
-    Constants(ConstEq),
+    Constants(bool, ConstEq),
     Application(AppEq),
 }
 
@@ -92,6 +97,13 @@ impl PendingEq {
     }
 }
 
+#[must_use]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum SolverState {
+    Consistent,
+    Inconsistent(Const, Const),
+}
+
 pub struct EqualitySolver {
     const_supply: ConstSupply,
     lookup: HashMap<App, AppEq>,
@@ -106,6 +118,8 @@ impl EqualitySolver {
                 members: Vec::new(),
                 uses: Vec::new(),
                 proof_parents: Vec::new(),
+                disequalities: Vec::new(),
+                disequalities_reason: HashMap::new(),
             },
             lookup: HashMap::new(),
             pending: Vec::new(),
@@ -116,7 +130,7 @@ impl EqualitySolver {
         self.const_supply.fresh()
     }
 
-    fn representative(&self, c: Const) -> Const {
+    pub fn representative(&self, c: Const) -> Const {
         self.const_supply.representatives[c.0]
     }
 
@@ -152,20 +166,55 @@ impl EqualitySolver {
         self.const_supply.uses[a2.0].push(eq);
     }
 
-    pub fn merge(&mut self, eq: Equation) {
+    fn disequality_reason_set_single(&mut self, a: Const, b: Const, eq: ConstEq) {
+        if let Entry::Vacant(o) = self.const_supply.disequalities_reason.entry((a, b)) {
+            let ConstEq(c1, c2) = eq;
+            o.insert((c1, c2));
+        }
+    }
+
+    fn disequality_reason_set(&mut self, a: Const, b: Const, eq: ConstEq) {
+        self.disequality_reason_set_single(a, b, eq);
+        self.disequality_reason_set_single(b, a, eq);
+    }
+
+    fn disequality_reason_get(&self, a: Const, b: Const) -> ConstEq {
+        let (c1, c2) = self.const_supply.disequalities_reason[&(a, b)];
+        ConstEq(c1, c2)
+    }
+
+    pub fn merge(&mut self, eq: Equation) -> SolverState {
         match eq {
-            Equation::Constants(eq) => {
-                self.pending.push(PendingEq::Constants(eq));
-                self.propagate();
+            Equation::Constants(positive, eq) => {
+                if positive {
+                    self.pending.push(PendingEq::Constants(eq));
+                    self.propagate()
+                } else {
+                    let ConstEq(a, b) = eq;
+                    let a = self.representative(a);
+                    let b = self.representative(b);
+
+                    // If we try to introduce a disequality between classes
+                    // which are equal, then it's an error.
+                    if a != b {
+                        self.const_supply.disequalities[a.0].insert(b);
+                        self.const_supply.disequalities[b.0].insert(a);
+                        self.disequality_reason_set(a, b, eq);
+                        SolverState::Consistent
+                    } else {
+                        SolverState::Inconsistent(a, b)
+                    }
+                }
             }
             Equation::Application(eq) => {
                 let AppEq(app, _) = eq;
                 if let Some(oldeq) = self.lookup(app) {
                     self.pending.push(PendingEq::Application(eq, oldeq));
-                    self.propagate();
+                    self.propagate()
                 } else {
                     self.lookup_set(app, eq);
                     self.add_to_uses(eq);
+                    SolverState::Consistent
                 }
             }
         }
@@ -194,7 +243,17 @@ impl EqualitySolver {
         }
     }
 
-    fn union(&mut self, a: Const, b: Const) {
+    fn safe_to_merge(&self, a: Const, b: Const) -> bool {
+        for &da in &self.const_supply.disequalities[a.0] {
+            if self.representative(da) == b {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn merge_classes(&mut self, a: Const, b: Const) {
         // Make sure that the size of a's equivalence class is less than or
         // equal to b, which is necessary to guarantee good time complexity.
         // This is common in union-find data structures.
@@ -208,6 +267,16 @@ impl EqualitySolver {
         let members_a = mem::replace(&mut self.const_supply.members[a.0], Vec::new());
         for &m in &members_a {
             self.reparent(m, b);
+        }
+
+        let disequalities_a =
+            mem::replace(&mut self.const_supply.disequalities[a.0], HashSet::new());
+        for &da in &disequalities_a {
+            let da = self.representative(da);
+            self.const_supply.disequalities[b.0].insert(da);
+            self.const_supply.disequalities[da.0].insert(b);
+            let old_reason = self.disequality_reason_get(a, da);
+            self.disequality_reason_set(da, b, old_reason);
         }
 
         // Generate new equations according to the lookup table, which are
@@ -224,7 +293,21 @@ impl EqualitySolver {
         }
     }
 
-    fn propagate(&mut self) {
+    fn check_diseq(&self, a: Const) -> bool {
+        let a = self.representative(a);
+
+        for &da in &self.const_supply.disequalities[a.0] {
+            let da = self.representative(da);
+
+            if da == a {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn propagate(&mut self) -> SolverState {
         while let Some(eq) = self.pending.pop() {
             let (a_orig, b_orig) = eq.constants();
 
@@ -236,12 +319,18 @@ impl EqualitySolver {
                 continue;
             }
 
+            self.merge_classes(a, b);
+
             // Keep track of this union for generating
             // explanations.
             self.add_proof_edge(eq);
 
-            self.union(a, b);
+            if !self.check_diseq(a) {
+                return SolverState::Inconsistent(a, b);
+            }
         }
+
+        SolverState::Consistent
     }
 
     pub fn are_congruent(&self, a: Const, b: Const) -> bool {
@@ -250,9 +339,23 @@ impl EqualitySolver {
         a == b
     }
 
-    pub fn explain(&self, a: Const, b: Const) -> Vec<Equation> {
-        let explanation_generator = ExplanationGenerator::new(&self.const_supply.proof_parents);
-        explanation_generator.explain(a, b)
+    pub fn explain(&self, positive: bool, a: Const, b: Const) -> Vec<Equation> {
+        if positive {
+            let mut explanation_generator =
+                ExplanationGenerator::new(&self.const_supply.proof_parents);
+            explanation_generator.explain(a, b);
+            explanation_generator.done()
+        } else {
+            let ConstEq(c1, c2) =
+                self.disequality_reason_get(self.representative(a), self.representative(b));
+            let mut explanation_generator =
+                ExplanationGenerator::new(&self.const_supply.proof_parents);
+            explanation_generator.explain(a, c1);
+            explanation_generator.explain(b, c2);
+            let mut explanation = explanation_generator.done();
+            explanation.push(Equation::Constants(false, ConstEq(c1, c2)));
+            explanation
+        }
     }
 }
 
@@ -300,7 +403,7 @@ impl<'a> ExplanationGenerator<'a> {
         }
     }
 
-    fn explain(mut self, c1: Const, c2: Const) -> Vec<Equation> {
+    fn explain(&mut self, c1: Const, c2: Const) {
         self.pending.push((c1, c2));
 
         while let Some((a, b)) = self.pending.pop() {
@@ -310,7 +413,9 @@ impl<'a> ExplanationGenerator<'a> {
             self.explain_along_path(a, c);
             self.explain_along_path(b, c);
         }
+    }
 
+    fn done(self) -> Vec<Equation> {
         self.explanation
     }
 
@@ -321,7 +426,7 @@ impl<'a> ExplanationGenerator<'a> {
             let (parent, reason) = self.parent(a).expect("we should always find c before running out of parents, since c is an ancestor of a");
 
             match reason {
-                PendingEq::Constants(eq) => self.explanation.push(Equation::Constants(eq)),
+                PendingEq::Constants(eq) => self.explanation.push(Equation::Constants(true, eq)),
                 PendingEq::Application(eq1, eq2) => {
                     self.explanation.push(Equation::Application(eq1));
                     self.explanation.push(Equation::Application(eq2));

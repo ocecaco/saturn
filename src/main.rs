@@ -92,26 +92,52 @@ fn a2(f: Const, t1: Term, t2: Term) -> Term {
 
 fn test_equality() {
     let mut solver = EqualitySolver::new();
-    let c0 = solver.new_const();
-    let c1 = solver.new_const();
-    let c2 = solver.new_const();
-    let c3 = solver.new_const();
-    let c4 = solver.new_const();
-    let c5 = solver.new_const();
-    let c6 = solver.new_const();
-    let c7 = solver.new_const();
+
+    let a = solver.new_const();
+    let b = solver.new_const();
+    let c = solver.new_const();
+    let d = solver.new_const();
+    let x = solver.new_const();
+    let y = solver.new_const();
+    let z = solver.new_const();
+    let w = solver.new_const();
     let f = solver.new_const();
+    println!(
+        "{:?}",
+        solver.merge(Equation::Application(AppEq(App(f, x), a))),
+    );
+    println!(
+        "{:?}",
+        solver.merge(Equation::Application(AppEq(App(f, y), b))),
+    );
 
-    solver.merge(Equation::Constants(ConstEq(c0, c1)));
-    solver.merge(Equation::Constants(ConstEq(c3, c4)));
-    solver.merge(Equation::Constants(ConstEq(c3, c5)));
-    solver.merge(Equation::Constants(ConstEq(c1, c2)));
-    solver.merge(Equation::Constants(ConstEq(c1, c3)));
+    println!(
+        "{:?}",
+        solver.merge(Equation::Constants(true, ConstEq(a, c))),
+    );
 
-    solver.merge(Equation::Application(AppEq(App(f, c0), c6)));
-    solver.merge(Equation::Application(AppEq(App(f, c1), c7)));
+    println!(
+        "{:?}",
+        solver.merge(Equation::Constants(true, ConstEq(b, d))),
+    );
 
-    println!("{:?}", solver.explain(c6, c7));
+    println!(
+        "{:?}",
+        solver.merge(Equation::Constants(false, ConstEq(c, d))),
+    );
+    println!(
+        "{:?}",
+        solver.merge(Equation::Application(AppEq(App(f, z), x))),
+    );
+    println!(
+        "{:?}",
+        solver.merge(Equation::Application(AppEq(App(f, w), y))),
+    );
+    println!(
+        "{:?}",
+        solver.merge(Equation::Constants(true, ConstEq(z, w))),
+    );
+    println!("{:?}", solver.explain(false, c, d));
 }
 
 fn main() -> Result<()> {
