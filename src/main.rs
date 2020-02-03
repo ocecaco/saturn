@@ -124,7 +124,9 @@ fn test_equality() {
         "{:?}",
         solver.merge(Equation::Constants(true, ConstEq(z, w))),
     );
+    println!("{:?}", solver.are_congruent(b, c));
     println!("{:?}", solver.explain_conflict(b, c));
+    println!("{:?}", solver.explain(true, b, c));
 }
 
 fn main() -> Result<()> {
