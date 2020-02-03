@@ -32,54 +32,6 @@ impl Solver {
         }
     }
 
-    // fn check_watches(&self) {
-    //     let mut watches_expected = LiteralMap::new();
-    //     for _ in 0..self.assignment.num_vars() {
-    //         watches_expected.push(Vec::new(), Vec::new());
-    //     }
-
-    //     // Get the expected watch lists
-    //     self.clause_database.expected_watches(&mut watches_expected);
-
-    //     // Compare to see if there is a difference, ignoring ordering of clauses in the watch lists
-    //     for i in 0..self.assignment.num_vars() {
-    //         for &sign in &[Sign::Positive, Sign::Negative] {
-    //             let lit = Literal { sign, var: Var(i) };
-
-    //             let actual = &self.watches[lit];
-    //             let expected = &watches_expected[lit];
-
-    //             let actual: HashSet<_> = actual.iter().copied().collect();
-    //             let expected: HashSet<_> = expected.iter().copied().collect();
-
-    //             let diff: Vec<_> = actual.symmetric_difference(&expected).copied().collect();
-
-    //             if diff.len() > 0 {
-    //                 panic!("Watch list invariant violation for literal {}: Expected {:?}, Found {:?}, Diff {:?}",
-    //                        lit, expected, actual, diff);
-    //             }
-    //         }
-    //     }
-
-    //     debug!("Successfully checked watches");
-    // }
-
-    // fn check_implied(&self) {
-    //     for c in &self.clause_database.clauses {
-    //         if c.is_implied(&self.assignment) {
-    //             panic!("Found implied clause in user clauses");
-    //         }
-    //     }
-
-    //     for c in &self.clause_database.clauses {
-    //         if c.is_implied(&self.assignment) {
-    //             panic!("Found implied clause in learned clauses");
-    //         }
-    //     }
-
-    //     debug!("Successfully checked for implied clauses");
-    // }
-
     fn num_assigns(&self) -> usize {
         self.trail.len()
     }
@@ -238,7 +190,6 @@ impl Solver {
     }
 
     // Asserts a literal
-    // TODO: Maybe do not use boolean for error reporting
     fn assert_literal(&mut self, lit: Literal, reason: Option<ClauseIndex>) -> bool {
         match self.assignment.literal_value(lit) {
             None => {
@@ -277,7 +228,6 @@ impl Solver {
     }
 
     fn propagate(&mut self) -> Option<ClauseIndex> {
-        // TODO: Avoid bounds check on self.trail
         while self.queue_head < self.trail.len() {
             let lit = self.trail[self.queue_head];
 
@@ -286,7 +236,6 @@ impl Solver {
             // necessary.
             let watches = mem::replace(&mut self.watches[lit], Vec::new());
 
-            // TODO: Get rid of bounds checking
             for i in 0..watches.len() {
                 let c_idx = watches[i];
 
@@ -352,10 +301,9 @@ impl Solver {
         clause: Clause,
         clause_type: ClauseType,
     ) -> Option<ClauseIndex> {
-        if clause.literals.len() == 0 {
+        if clause.literals.is_empty() {
             panic!("attempt to add empty clause");
         } else if clause.literals.len() == 1 {
-            // TODO: What about the ROOT LEVEL?
             self.assert_literal(clause.literals[0], None);
             None
         } else {
@@ -394,9 +342,6 @@ impl Solver {
     fn search(&mut self) -> Option<Model> {
         loop {
             let maybe_conflict = self.propagate();
-            // if cfg!(debug_assertions) {
-            //     self.check_watches();
-            // }
             if let Some(conflict) = maybe_conflict {
                 // Conflict at root level means the formula is unsatisfiable
                 if self.decision_level() == 0 {
@@ -405,19 +350,7 @@ impl Solver {
 
                 let (learned_clause, backtrack_level) = self.analyze(conflict);
                 debug!("New learned clause: {}", learned_clause);
-                if cfg!(debug_assertions) {
-                    learned_clause.check_valid_learned(
-                        self.decision_level(),
-                        backtrack_level,
-                        &self.assignment,
-                    );
-                }
-
                 self.cancel_until(backtrack_level);
-
-                // if cfg!(debug_assertions) {
-                //     self.check_implied();
-                // }
 
                 self.record(learned_clause);
 
@@ -427,10 +360,6 @@ impl Solver {
                 if self.clause_database.learned.len() > 1000 {
                     self.clause_database.reduce_db(&self.assignment);
                 }
-
-                // if cfg!(debug_assertions) {
-                //     self.check_implied();
-                // }
 
                 // If all variables are assigned, then we have a satisfying
                 // assignment.
@@ -458,8 +387,6 @@ impl Solver {
     }
 
     pub fn solve(mut self) -> Option<Model> {
-        // TODO: Maybe do unit propagation at the beginning to handle unit
-        // clauses which are there from the beginning.
         self.search()
     }
 }

@@ -126,8 +126,7 @@ impl ClauseDatabase {
             }
         }
 
-        // TODO: Calculate sensible threshold value
-        let threshold = 0.0;
+        let threshold = self.act_inc / (self.learned.len() as f64);
 
         // Remove non-locked clauses which are below a certain activity threshold
         for &(i, act) in top_half {
@@ -142,26 +141,4 @@ impl ClauseDatabase {
             }
         }
     }
-
-    // pub(crate) fn expected_watches(&self, watches: &mut LiteralMap<Vec<ClauseIndex>>) {
-    //     for (i, c) in self.clauses.iter().enumerate() {
-    //         let idx = ClauseIndex {
-    //             ty: ClauseType::Problem,
-    //             offset: i,
-    //         };
-
-    //         watches[c.literals[0].negate()].push(idx);
-    //         watches[c.literals[1].negate()].push(idx);
-    //     }
-
-    //     for (i, c) in self.learned.iter().enumerate() {
-    //         let idx = ClauseIndex {
-    //             ty: ClauseType::Learned,
-    //             offset: i,
-    //         };
-
-    //         watches[c.literals[0].negate()].push(idx);
-    //         watches[c.literals[1].negate()].push(idx);
-    //     }
-    // }
 }

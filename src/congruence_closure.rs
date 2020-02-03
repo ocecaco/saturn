@@ -8,36 +8,9 @@ use std::mem;
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Const(usize);
 
-#[derive(Debug, Clone)]
-pub struct Term {
-    function: Const,
-    args: Vec<Term>,
-}
-
-impl Term {
-    pub fn new(function: Const, args: Vec<Term>) -> Self {
-        Term { function, args }
-    }
-}
-
-#[derive(Debug, Clone)]
-enum Curried {
-    Const(Const),
-    Apply(Box<Curried>, Box<Curried>),
-}
-
-fn currify(t: &Term) -> Curried {
-    let mut result = Curried::Const(t.function);
-
-    for t in &t.args {
-        result = Curried::Apply(Box::new(result), Box::new(currify(t)));
-    }
-
-    result
-}
-
 type ConstMap<T> = Vec<T>;
-type ProofForest = ConstMap<Option<(Const, PendingEq)>>;
+type ProofEntry = Option<(Const, PendingEq)>;
+type ProofForest = ConstMap<ProofEntry>;
 
 struct ConstSupply {
     representatives: ConstMap<Const>,
@@ -60,10 +33,6 @@ impl ConstSupply {
         self.proof_parents.push(None);
         self.disequalities.push(HashSet::new());
         new_const
-    }
-
-    fn num_constants(&self) -> usize {
-        self.representatives.len()
     }
 }
 
@@ -243,16 +212,6 @@ impl EqualitySolver {
         }
     }
 
-    fn safe_to_merge(&self, a: Const, b: Const) -> bool {
-        for &da in &self.const_supply.disequalities[a.0] {
-            if self.representative(da) == b {
-                return false;
-            }
-        }
-
-        true
-    }
-
     fn merge_classes(&mut self, a: Const, b: Const) {
         // Make sure that the size of a's equivalence class is less than or
         // equal to b, which is necessary to guarantee good time complexity.
@@ -374,7 +333,7 @@ impl EqualitySolver {
 }
 
 pub struct ExplanationGenerator<'a> {
-    proof_forest: &'a ProofForest,
+    proof_forest: &'a [ProofEntry],
     // For each represenatative, the highest node in its class. A node is higher
     // if it is closer to the root of its proof tree in the proof forest. During
     // explanation generation, we can typically jump to the highest node in a
@@ -392,7 +351,7 @@ pub struct ExplanationGenerator<'a> {
 }
 
 impl<'a> ExplanationGenerator<'a> {
-    fn new(proof_forest: &'a ProofForest) -> Self {
+    fn new(proof_forest: &'a [ProofEntry]) -> Self {
         let num_constants = proof_forest.len();
 
         let mut highest_node = Vec::with_capacity(num_constants);
@@ -505,7 +464,7 @@ impl<'a> ExplanationGenerator<'a> {
             }
         }
 
-        return None;
+        None
     }
 
     fn union_classes(&mut self, a: Const, b: Const, highest_node: Const) {

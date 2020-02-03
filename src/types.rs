@@ -1,5 +1,3 @@
-use log::debug;
-use std::cmp;
 use std::collections::HashSet;
 use std::fmt;
 
@@ -16,7 +14,6 @@ impl fmt::Display for Var {
     }
 }
 
-// TODO: Possibly indicate sign by making literal negative/positive
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Literal {
     pub(crate) sign: Sign,
@@ -61,14 +58,14 @@ pub enum Sign {
 }
 
 impl Sign {
-    fn flip(&self) -> Sign {
+    fn flip(self) -> Sign {
         match self {
             Sign::Positive => Sign::Negative,
             Sign::Negative => Sign::Positive,
         }
     }
 
-    fn value(&self) -> bool {
+    fn value(self) -> bool {
         match self {
             Sign::Positive => true,
             Sign::Negative => false,
@@ -83,9 +80,6 @@ pub struct Clause {
 
 impl Clause {
     pub fn new(literals: Vec<Literal>) -> Self {
-        // TODO: Normalize clause, check for (p v ~p)
-        // occurrences, and potentially use the current solver state in
-        // incremental implementation
         let mut literals = literals
             .iter()
             .copied()
@@ -150,62 +144,6 @@ impl Clause {
         // If we didn't find a new literal, then this is a unit clause. Perform
         // unit propagation.
         (lit, Some(self.literals[0]))
-    }
-
-    // pub(crate) fn is_implied(&self, assignment: &Assignment) -> bool {
-    //     let mut num_false = 0;
-    //     let mut num_unassigned = 0;
-
-    //     for &lit in &self.literals {
-    //         match assignment.literal_value(lit) {
-    //             VarValue::Unassigned => num_unassigned += 1,
-    //             VarValue::False => num_false += 1,
-    //             VarValue::True => {}
-    //         }
-    //     }
-
-    //     (num_unassigned == 1) && (num_false == self.literals.len() - 1)
-    // }
-
-    pub(crate) fn check_valid_learned(
-        &self,
-        current_level: usize,
-        actual_backtrack_level: usize,
-        assignment: &Assignment,
-    ) {
-        // A valid learned clause is a clause that is currently falsified, and
-        // which contains precisely one literal from the current decision level
-        // at position 0
-        let mut num_current_level = 0;
-        let mut expected_backtrack_level = 0;
-
-        for &lit in &self.literals {
-            assert_eq!(
-                assignment.literal_value(lit),
-                Some(false),
-                "Found true literal: {}",
-                lit
-            );
-
-            if let Some(lvl) = assignment.var_level(lit.var) {
-                if lvl == current_level {
-                    num_current_level += 1;
-                } else {
-                    expected_backtrack_level = cmp::max(expected_backtrack_level, lvl);
-                }
-            }
-        }
-
-        assert_eq!(num_current_level, 1);
-
-        assert_eq!(
-            assignment.var_level(self.literals[0].var),
-            Some(current_level)
-        );
-
-        assert_eq!(actual_backtrack_level, expected_backtrack_level);
-
-        debug!("Successfully checked learned clause");
     }
 }
 

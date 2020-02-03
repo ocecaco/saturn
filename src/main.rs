@@ -1,7 +1,4 @@
-// TODO: Remove this eventually
-#![allow(dead_code)]
-#![allow(unused_imports)]
-
+#![warn(clippy::all)]
 mod assignment;
 mod clausedb;
 mod congruence_closure;
@@ -13,7 +10,7 @@ mod varorder;
 type Error = Box<dyn std::error::Error>;
 type Result<T> = std::result::Result<T, Error>;
 
-use crate::congruence_closure::{App, AppEq, Const, ConstEq, EqualitySolver, Equation, Term};
+use crate::congruence_closure::{App, AppEq, ConstEq, EqualitySolver, Equation};
 use log::debug;
 use solver::Solver;
 use std::convert::TryInto;
@@ -22,6 +19,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use types::{Clause, Literal};
 
+#[allow(clippy::comparison_chain)]
 fn load_dimacs(solver: &mut Solver, filename: &str) -> Result<()> {
     let file = File::open(filename)?;
     let reader = BufReader::new(file);
@@ -78,18 +76,7 @@ fn load_dimacs(solver: &mut Solver, filename: &str) -> Result<()> {
     Ok(())
 }
 
-fn con(c: Const) -> Term {
-    Term::new(c, vec![])
-}
-
-fn a1(f: Const, t: Term) -> Term {
-    Term::new(f, vec![t])
-}
-
-fn a2(f: Const, t1: Term, t2: Term) -> Term {
-    Term::new(f, vec![t1, t2])
-}
-
+#[allow(clippy::many_single_char_names)]
 fn test_equality() {
     let mut solver = EqualitySolver::new();
 
@@ -143,13 +130,13 @@ fn test_equality() {
 fn main() -> Result<()> {
     env_logger::init();
 
-    // let args: Vec<_> = env::args().collect();
+    let args: Vec<_> = env::args().collect();
 
-    // let mut solver = Solver::new();
+    let mut solver = Solver::new();
 
-    // load_dimacs(&mut solver, &args[1])?;
+    load_dimacs(&mut solver, &args[1])?;
 
-    // println!("{:?}", solver.solve());
+    println!("{:?}", solver.solve());
     test_equality();
 
     Ok(())
